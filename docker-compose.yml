@@ -1,0 +1,20 @@
+services:
+  mariadb:
+    image: mariadb:12.2
+    container_name: mariadb
+    restart: always
+
+    environment:
+      MARIADB_ROOT_PASSWORD: 123root4
+      MARIADB_DATABASE: boot_whats
+      MARIADB_USER: tiago
+      MARIADB_PASSWORD: 123tiago4
+      MARIADB_ROOT_HOST: "%"
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      - ./run:/var/lib/mysql
+
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
