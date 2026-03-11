@@ -1,13 +1,27 @@
 const { getSenderId } = require('./messageUtils');
 
 class CommandHandler {
-    constructor(auditLogger) {
+    constructor(auditLogger, oracleService) {
         this.auditLogger = auditLogger;
+        this.oracleService = oracleService;
     }
 
     async handle(msg, chat) {
-        if (!msg.body.startsWith('/ban')) return;
+        const body = msg.body || '';
+        if (!body.startsWith('/')) return;
 
+        const [command] = body.trim().split(/\s+/);
+
+        if (command === '/ban') {
+            return this.handleBan(msg, chat);
+        }
+
+        if (command === '/oraculo') {
+            return this.handleOraculo(msg, chat);
+        }
+    }
+
+    async handleBan(msg, chat) {
         const authorId = getSenderId(msg);
         const groupParticipants = chat.participants;
         const isAdmin = groupParticipants.some(
@@ -45,6 +59,15 @@ class CommandHandler {
             console.error(err);
             await msg.reply('❌ Erve ao banir: Certifique-se de que o BOT é administrador do grupo.');
         }
+    }
+
+    async handleOraculo(msg, chat) {
+        if (!this.oracleService) {
+            await msg.reply('❌ Serviço de oráculo não está configurado.');
+            return;
+        }
+
+        await this.oracleService.getWeeklyPrediction(msg, chat);
     }
 }
 

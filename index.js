@@ -7,14 +7,16 @@ const MessageFilter = require('./services/MessageFilter');
 const ImageAnalyzer = require('./services/ImageAnalyzer');
 const CommandHandler = require('./services/CommandHandler');
 const AuditLogger = require('./services/AuditLogger');
+const OracleService = require('./services/OracleService');
 const { connectDatabase } = require('./services/database');
 
 let model;
 let imageAnalyzer;
 const auditLogger = new AuditLogger();
+const oracleService = new OracleService(auditLogger);
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
-const commandHandler = new CommandHandler(auditLogger);
+const commandHandler = new CommandHandler(auditLogger, oracleService);
 
 // Função para carregar o modelo de forma assíncrona antes de tudo
 async function init() {

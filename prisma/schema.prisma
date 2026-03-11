@@ -20,3 +20,27 @@ model Log {
 
   @@map("logs")
 }
+
+model OraclePrediction {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  weekKey   String
+  message   String   @db.Text
+  luckType  String   @default("SORTE")
+  luckyNumber Int    @default(0)
+  animalName String?
+  createdAt DateTime @default(now())
+
+  @@unique([phone, weekKey])
+  @@map("oracle_predictions")
+}
+
+model PowerAnimal {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String   @db.Text
+  habitat     String?
+  createdAt   DateTime @default(now())
+
+  @@map("power_animals")
+}
