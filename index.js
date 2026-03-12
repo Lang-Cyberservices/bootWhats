@@ -22,16 +22,26 @@ const commandHandler = new CommandHandler(auditLogger, oracleService);
 async function init() {
     try {
         await connectDatabase();
+    } catch (e) {
+        console.error("❌ Erro ao conectar no banco de dados:", e);
+        // Mesmo sem banco, não inicializamos o bot, pois ele depende fortemente do Prisma.
+        return;
+    }
+
+    try {
         model = await nsfw.load();
         imageAnalyzer = new ImageAnalyzer(model, {
             auditLogger,
             evidenceDir: process.env.NSFW_EVIDENCE_DIR
         });
         console.log("✅ Modelo de IA carregado e pronto!");
-        client.initialize();
     } catch (e) {
         console.error("❌ Erro ao carregar o modelo de IA:", e);
     }
+
+    // Inicializa o cliente mesmo se o modelo NSFW falhar,
+    // assim o bot continua funcionando (apenas sem análise de imagem).
+    client.initialize();
 }
 
 const client = new Client({

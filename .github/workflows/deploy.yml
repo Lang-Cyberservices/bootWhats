@@ -1,0 +1,36 @@
+name: Deploy Automático BootWhats
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ~/projetos/bootWhats
+            git pull origin master
+            
+            # Carrega o NVM e o Node (importante para o script encontrar o node/npm)
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            
+            # Instala dependências e atualiza o Prisma
+            npm install
+            npx prisma generate
+            npx prisma migrate deploy
+            
+            # Reinicia a aplicação no PM2
+            # pm2 restart bootwhats || pm2 start index.js --name "bootwhats"
