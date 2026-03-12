@@ -44,3 +44,10 @@ model PowerAnimal {
 
   @@map("power_animals")
 }
+
+model Joke {
+  id    Int    @id @default(autoincrement())
+  text  String @db.Text
+
+  @@map("jokes")
+}

@@ -1,6 +1,31 @@
 const { getSenderId } = require('./messageUtils');
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
+const { prisma } = require('./database');
+
+// Controle simples de flood por usuário (em memória)
+const COMMAND_WINDOW_MS = 60_000;
+const DEFAULT_MAX_COMMANDS_PER_MINUTE = 3;
+const MAX_COMMANDS_PER_MINUTE = (() => {
+    const raw = process.env.MAX_COMMANDS_PER_MINUTE;
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_COMMANDS_PER_MINUTE;
+})();
+const commandHistoryByUser = new Map(); // key: authorId, value: number[]
+
+function isRateLimited(authorId) {
+    if (!authorId) return false;
+
+    const now = Date.now();
+    const windowStart = now - COMMAND_WINDOW_MS;
+
+    const history = commandHistoryByUser.get(authorId) || [];
+    const recent = history.filter((ts) => ts >= windowStart);
+    recent.push(now);
+    commandHistoryByUser.set(authorId, recent);
+
+    return recent.length > MAX_COMMANDS_PER_MINUTE;
+}
 
 class CommandHandler {
     constructor(auditLogger, oracleService) {
@@ -13,6 +38,14 @@ class CommandHandler {
         if (!body.startsWith('/')) return;
 
         const [command] = body.trim().split(/\s+/);
+
+        const authorId = getSenderId(msg);
+
+        // Só aplica rate limit para comandos válidos conhecidos
+        if (isKnown && isRateLimited(authorId)) {
+            await msg.reply('⏱️ Até a pressa precisa de limite. Respira, espera um pouco e tenta de novo.');
+            return;
+        }
 
         if (command === '/ban') {
             return this.handleBan(msg, chat);
@@ -33,6 +66,12 @@ class CommandHandler {
         if (command === '/sticker') {
             return this.handleSticker(msg, chat);
         }
+
+        if (command === '/piada') {
+            return this.handlePiada(msg, chat);
+        }
+
+        return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
     }
 
     async handleBan(msg, chat) {
@@ -45,12 +84,12 @@ class CommandHandler {
         );
 
         if (!isAdmin) {
-            await msg.reply('❌ Erro: Apenas administradores podem usar este comando.');
+            await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
             return;
         }
 
         if (!msg.hasQuotedMsg) {
-            await msg.reply('❓ Para banir, responda à mensagem da pessoa que você quer remover com o comando /ban.');
+            await msg.reply('❓ Para purificar este antro da tolice, aponta tua lanterna para a face do imundo — responde à mensagem daquele que não merece o sol — e brada o decreto: /ban');
             return;
         }
 
@@ -59,7 +98,7 @@ class CommandHandler {
 
         try {
             await chat.removeParticipants([userToBan]);
-            await msg.reply('🔨 O martelo do ban foi batido! Usuário removido.');
+            await msg.reply('Finalmente, um pouco de silêncio. O estorvo foi removido e o ar parece mais limpo. Agora, saia do meu sol para que eu possa contemplar o nada em paz.');
 
             await this.auditLogger?.log('BAN_EXECUTED', {
                 chatId: chat?.id?._serialized,
@@ -71,13 +110,13 @@ class CommandHandler {
             });
         } catch (err) {
             console.error(err);
-            await msg.reply('❌ Erve ao banir: Certifique-se de que o BOT é administrador do grupo.');
+            await msg.reply('❌ A lanterna falhou em encontrar o caminho da saída. O estorvo permanece entre nós, como uma mancha que não sai com água. Verificai se tendes o poder para tal ato ou se o destino decidiu que ainda deveis suportar a presença deste bípede sem penas.');
         }
     }
 
     async handleOraculo(msg, chat) {
         if (!this.oracleService) {
-            await msg.reply('❌ Serviço de oráculo não está configurado.');
+            await msg.reply('❌ Queres ouvir o oráculo, mas nem acendeu o fogo do templo.');
             return;
         }
 
@@ -105,6 +144,9 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
 - 🔮 */oraculo*  
   Consulta o oráculo místico e retorna sua previsão da semana (uma vez por semana por usuário).
 
+- 😂 */piada*  
+  Envia uma piada aleatória do bot.
+
 - 🖼️ */sticker*  
   Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
 
@@ -126,14 +168,14 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
         const quotedMsg = await msg.getQuotedMessage();
 
         if (!quotedMsg?.hasMedia) {
-            await msg.reply('❌ A mensagem respondida não tem mídia. Responda uma imagem ou GIF/vídeo curto e use */sticker*.');
+            await msg.reply('❌ Queres figurinha do nada, como quem pede sombra sem sol. Responda uma imagem ou GIF/vídeo curto e use */sticker*.');
             return;
         }
 
         try {
             const media = await quotedMsg.downloadMedia();
             if (!media) {
-                await msg.reply('❌ Não consegui baixar a mídia para criar a figurinha. Tente novamente.');
+                await msg.reply('❌ Até a arte precisa de matéria-prima. Não consegui baixar a mídia para criar a figurinha. Tente novamente.');
                 return;
             }
 
@@ -161,7 +203,36 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
             });
         } catch (err) {
             console.error('Erro ao gerar sticker:', err);
-            await msg.reply('❌ Não consegui transformar em figurinha agora. Se for GIF, confirme que é um GIF/vídeo curto e tente novamente.');
+            await msg.reply('❌ Nem toda imagem nasceu para ser ícone. ');
+        }
+    }
+
+    async handlePiada(msg, _chat) {
+        try {
+            const total = await prisma.joke.count();
+
+            if (!total) {
+                await msg.reply('😕 Numa cidade cheia de tolos, faltam-me justamente as piadas. ');
+                return;
+            }
+
+            const randomIndex = Math.floor(Math.random() * total);
+            const jokes = await prisma.joke.findMany({
+                skip: randomIndex,
+                take: 1
+            });
+
+            const joke = jokes[0];
+
+            if (!joke) {
+                await msg.reply('😕 Até o humor, às vezes, foge da praça.');
+                return;
+            }
+
+            await msg.reply(`😂 *Piada do bot (#${joke.id})*\n\n${joke.text}`);
+        } catch (err) {
+            console.error('Erro ao buscar piada:', err);
+            await msg.reply('❌ Nem sempre a graça obedece ao clique. Não consegui buscar uma piada agora, tente novamente em alguns instantes.');
         }
     }
 }

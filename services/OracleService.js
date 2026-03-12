@@ -32,7 +32,7 @@ class OracleService {
         const weekKey = getCurrentWeekKey();
 
         if (!phone) {
-            await msg.reply('Não consegui ler sua aura para gerar a previsão.');
+            await msg.reply('📜 Diógenes coça a barba: “Queres destino, mas nem nome deixas no chão da ágora.” Não consegui identificar você para gerar a previsão.');
             return;
         }
 
@@ -61,7 +61,7 @@ class OracleService {
 
         // 2) Se não existir, gera nova previsão via Gemini
         if (!this.model) {
-            await msg.reply('❌ O serviço de oráculo não está configurado corretamente (GEMINI_API_KEY ausente).');
+            await msg.reply('❌ Diógenes provoca: “Invocas o oráculo, mas esqueces de acender o fogo sagrado (GEMINI_API_KEY).” O serviço do oráculo não está configurado corretamente.');
             return;
         }
 
@@ -139,7 +139,7 @@ Importante:
             });
         } catch (err) {
             console.error('Erro ao gerar previsão do oráculo:', err);
-            await msg.reply('❌ Não consegui consultar o oráculo agora. Tente novamente mais tarde.');
+            await msg.reply('❌ Diógenes do barril diria: “Até os deuses têm dias de silêncio.” Não consegui consultar o oráculo agora; tente novamente mais tarde.');
         }
     }
 }
