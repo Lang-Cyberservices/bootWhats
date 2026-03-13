@@ -2,6 +2,7 @@ const { getSenderId } = require('./messageUtils');
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
+const ytdl = require('ytdl-core');
 
 // Controle simples de flood por usuário (em memória)
 const COMMAND_WINDOW_MS = 60_000;
@@ -37,9 +38,11 @@ class CommandHandler {
         const body = msg.body || '';
         if (!body.startsWith('/')) return;
 
-        const [command] = body.trim().split(/\s+/);
+        const [command, ...args] = body.trim().split(/\s+/);
 
         const authorId = getSenderId(msg);
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/youtube'];
+        const isKnown = knownCommands.includes(command);
 
         // Só aplica rate limit para comandos válidos conhecidos
         if (isKnown && isRateLimited(authorId)) {
@@ -69,6 +72,10 @@ class CommandHandler {
 
         if (command === '/piada') {
             return this.handlePiada(msg, chat);
+        }
+
+        if (command === '/youtube') {
+            return this.handleYouTube(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -233,6 +240,59 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
         } catch (err) {
             console.error('Erro ao buscar piada:', err);
             await msg.reply('❌ Nem sempre a graça obedece ao clique. Não consegui buscar uma piada agora, tente novamente em alguns instantes.');
+        }
+    }
+
+    async handleYouTube(msg, chat, args) {
+        const url = args[0];
+
+        if (!url) {
+            await msg.reply('❌ Queres um vídeo sem apontar o caminho. Envie algo como: /youtube https://youtu.be/algum_video_curto');
+            return;
+        }
+
+        if (!ytdl.validateURL(url)) {
+            await msg.reply('❌ Até Diógenes reconheceria um caminho torto: este não parece ser um link válido do YouTube.');
+            return;
+        }
+
+        try {
+            const info = await ytdl.getInfo(url);
+            const durationSec = Number(info.videoDetails.lengthSeconds || 0);
+
+            if (durationSec > 120) {
+                await msg.reply('⏱️ Este vídeo é longo demais para a praça. Envie apenas vídeos curtos (até 2 minutos).');
+                return;
+            }
+
+            const chunks = [];
+            await new Promise((resolve, reject) => {
+                ytdl(url, {
+                    quality: 'lowest',
+                    filter: 'audioandvideo'
+                })
+                    .on('data', (chunk) => chunks.push(chunk))
+                    .on('end', resolve)
+                    .on('error', reject);
+            });
+
+            const buffer = Buffer.concat(chunks);
+            const maxBytes = 16 * 1024 * 1024; // ~16MB
+
+            if (buffer.length > maxBytes) {
+                await msg.reply('📦 O vídeo que trouxeste pesa mais do que esta ágora suporta. Tente um link mais curto ou leve.');
+                return;
+            }
+
+            const filename = `${info.videoDetails.title || 'video'}.mp4`;
+            const media = new MessageMedia('video/mp4', buffer.toString('base64'), filename);
+
+            await chat.sendMessage(media, {
+                sendVideoAsDocument: false
+            });
+        } catch (err) {
+            console.error('Erro ao baixar vídeo do YouTube:', err);
+            await msg.reply('❌ Até os bytes se rebelam às vezes. Não consegui trazer este vídeo do YouTube; tente outro link ou tente mais tarde.');
         }
     }
 }

@@ -45,6 +45,16 @@ model PowerAnimal {
   @@map("power_animals")
 }
 
+model PhilosopherProtector {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String   @db.Text
+  phrase      String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@map("philosopher_protectors")
+}
+
 model Joke {
   id    Int    @id @default(autoincrement())
   text  String @db.Text

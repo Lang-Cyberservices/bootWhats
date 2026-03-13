@@ -22,7 +22,7 @@ class OracleService {
             console.warn('GEMINI_API_KEY não configurada. O /oraculo não funcionará sem esta variável.');
         } else {
             const genAI = new GoogleGenerativeAI(apiKey);
-            const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+            const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
             this.model = genAI.getGenerativeModel({ model: modelName });
         }
     }
@@ -32,7 +32,7 @@ class OracleService {
         const weekKey = getCurrentWeekKey();
 
         if (!phone) {
-            await msg.reply('📜 Diógenes coça a barba: “Queres destino, mas nem nome deixas no chão da ágora.” Não consegui identificar você para gerar a previsão.');
+            await msg.reply('📜 “Queres destino, mas nem nome deixas no chão da ágora.” Não consegui identificar você para gerar a previsão.');
             return;
         }
 
@@ -47,7 +47,7 @@ class OracleService {
         });
 
         if (existing) {
-            await msg.reply(`🔮 Sua previsão desta semana é:\n\n${existing.message}`);
+            await msg.reply(existing.message);
             await this.auditLogger?.log('ORACLE_REUSED', {
                 chatId: chat?.id?._serialized,
                 phone,
@@ -61,7 +61,7 @@ class OracleService {
 
         // 2) Se não existir, gera nova previsão via Gemini
         if (!this.model) {
-            await msg.reply('❌ Diógenes provoca: “Invocas o oráculo, mas esqueces de acender o fogo sagrado (GEMINI_API_KEY).” O serviço do oráculo não está configurado corretamente.');
+            await msg.reply('❌ “Invocas o oráculo, mas esqueces de acender o fogo sagrado .” ');
             return;
         }
 
@@ -110,11 +110,32 @@ Importante:
             const result = await this.model.generateContent(prompt);
             const response = result?.response?.text?.() || 'Os astros estão tímidos hoje, volte mais tarde.';
 
+            // Seleciona um filósofo protetor aleatório (não envia ao Gemini)
+            const totalPhilosophers = await prisma.philosopherProtector.count();
+            let philosopher = null;
+
+            if (totalPhilosophers > 0) {
+                const randomIndex = Math.floor(Math.random() * totalPhilosophers);
+                const philosophers = await prisma.philosopherProtector.findMany({
+                    skip: randomIndex,
+                    take: 1
+                });
+                philosopher = philosophers[0] || null;
+            }
+
+            if (!philosopher) {
+                await msg.reply('❌ “Invocas o oráculo, mas o templo está vazio.” ');
+                return;
+            }
+
             const finalMessage =
 `🔮 *Oráculo da semana*\n` +
 `🐾 *Animal de poder*: ${animalName}\n` +
 `🎲 *Número da sorte*: ${luckyNumberStr}\n\n` +
-`${response}`;
+`${response}\n\n` +
+`🛡️ *Filósofo protetor*: ${philosopher.name}\n` +
+`_${philosopher.description}_\n\n` +
+`💡 *${philosopher.phrase}*`;
 
             const created = await prisma.oraclePrediction.create({
                 data: {
@@ -139,10 +160,20 @@ Importante:
             });
         } catch (err) {
             console.error('Erro ao gerar previsão do oráculo:', err);
-            await msg.reply('❌ Diógenes do barril diria: “Até os deuses têm dias de silêncio.” Não consegui consultar o oráculo agora; tente novamente mais tarde.');
+            const errText = String(err?.message || '');
+            if (err?.status === 429 || errText.includes('Quota exceeded')) {
+                await msg.reply('❌ estou cansado agora saia da frente do meu sol.');
+                return;
+            }
+            if (errText.includes('models/') && errText.includes('not found')) {
+                await msg.reply(
+                    '❌ O modelo Gemini configurado não existe ou não suporta generateContent. Ajuste o `GEMINI_MODEL` na .env usando a lista da API e tente novamente.'
+                );
+            } else {
+                await msg.reply('❌ “Até os deuses têm dias de silêncio.” Não consegui consultar o oráculo agora; tente novamente mais tarde.');
+            }
         }
     }
 }
 
 module.exports = OracleService;
-

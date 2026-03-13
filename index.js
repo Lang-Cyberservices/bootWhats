@@ -18,6 +18,9 @@ const oracleService = new OracleService(auditLogger);
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const commandHandler = new CommandHandler(auditLogger, oracleService);
 
+
+
+
 // Função para carregar o modelo de forma assíncrona antes de tudo
 async function init() {
     try {
@@ -29,10 +32,11 @@ async function init() {
     }
 
     try {
-        model = await nsfw.load();
+        model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
         imageAnalyzer = new ImageAnalyzer(model, {
             auditLogger,
-            evidenceDir: process.env.NSFW_EVIDENCE_DIR
+            evidenceDir: process.env.NSFW_EVIDENCE_DIR,
+            inputSize: 299
         });
         console.log("✅ Modelo de IA carregado e pronto!");
     } catch (e) {
@@ -60,9 +64,19 @@ client.on('ready', () => {
 });
 
 client.on('message', async (msg) => {
-    const chat = await msg.getChat();
+    if (typeof msg.from === 'string' && msg.from.endsWith('@newsletter')) {
+        return; // Ignora mensagens de canais para evitar bug no ChatFactory
+    }
 
-    if (!chat.isGroup) return;
+    let chat;
+    try {
+        chat = await msg.getChat();
+    } catch (e) {
+        console.error('Erro ao obter chat da mensagem:', e);
+        return;
+    }
+
+    if (!chat?.isGroup) return;
 
     await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);

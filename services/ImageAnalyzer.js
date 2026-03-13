@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { getSenderId } = require('./messageUtils');
 
+
 class ImageAnalyzer {
     constructor(model, options = {}) {
         this.model = model;
@@ -11,7 +12,10 @@ class ImageAnalyzer {
         this.blockedClasses = options.blockedClasses ?? ['Porn', 'Hentai', 'Sexy'];
         this.auditLogger = options.auditLogger;
         this.evidenceDir = options.evidenceDir || './storage/deleted-media';
+        this.inputSize = options.inputSize || this.getModelInputSize(model) || 299;
     }
+
+           
 
     async handle(msg, chat) {
         if (!this.model) return;
@@ -24,9 +28,10 @@ class ImageAnalyzer {
             if (!media) return;
 
             const bufferOriginal = Buffer.from(media.data, 'base64');
+            const inputSize = this.getModelInputSize(this.model) || this.inputSize;
             const bufferProcessado = await sharp(bufferOriginal)
                 .toFormat('png')
-                .resize(224, 224, { fit: 'fill' })
+                .resize(inputSize, inputSize, { fit: 'fill' })
                 .toBuffer();
 
             const imageTensor = tf.node.decodeImage(bufferProcessado, 3);
@@ -36,9 +41,18 @@ class ImageAnalyzer {
             console.log('Imagem processada e pronta para o TensorFlow!');
             console.log('Resultado da análise:', predictions);
 
-            const isNSFW = predictions.some((prediction) =>
-                this.blockedClasses.includes(prediction.className) && prediction.probability > this.threshold
-            );
+            const getScore = (className) => {
+                const found = predictions.find((p) => p.className === className);
+                return found ? found.probability : 0;
+            };
+
+            let pornScore = getScore('Porn');
+            const neutralScore = getScore('Neutral');
+            const sexyScore = getScore('Sexy');
+            const hentaiScore = getScore('Hentai');
+
+            const isNSFW =
+                pornScore > 0.85 || sexyScore > 0.80 || hentaiScore > 0.80;
 
             if (isNSFW) {
                 const evidencePath = await this.saveEvidence(msg, media, bufferOriginal);
@@ -88,6 +102,19 @@ class ImageAnalyzer {
         if (!subtype) return 'bin';
         return subtype.split(';')[0].replace('+xml', '');
     }
+
+    getModelInputSize(model) {
+        const shape =
+            model?.model?.inputs?.[0]?.shape ||
+            model?.model?.inputShape ||
+            model?.inputShape;
+        const size = Array.isArray(shape) ? shape[1] : null;
+        return Number.isFinite(size) ? size : null;
+    }
+
+   
+
+
 }
 
 module.exports = ImageAnalyzer;
