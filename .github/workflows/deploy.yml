@@ -33,4 +33,4 @@ jobs:
             npx prisma migrate deploy
             
             # Reinicia a aplicação no PM2
-            # pm2 restart bootwhats || pm2 start index.js --name "bootwhats"
+            pm2 restart bootwhats || pm2 start index.js --name "bootwhats"

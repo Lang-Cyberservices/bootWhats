@@ -50,12 +50,6 @@ class CommandHandler {
         const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir'];
         const isKnown = knownCommands.includes(command);
 
-        // Só aplica rate limit para comandos válidos conhecidos
-        if (isKnown && isRateLimited(authorId)) {
-            await msg.reply('⏱️ Até a pressa precisa de limite. Respira, espera um pouco e tenta de novo.');
-            return;
-        }
-
         if (command === '/ban') {
             return this.handleBan(msg, chat);
         }
