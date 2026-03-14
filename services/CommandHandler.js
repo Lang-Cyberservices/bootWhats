@@ -2,7 +2,13 @@ const { getSenderId } = require('./messageUtils');
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');
+const { saveEvidence } = require('./mediaUtils');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const os = require('node:os');
+const path = require('node:path');
+const fs = require('node:fs/promises');
 
 // Controle simples de flood por usuário (em memória)
 const COMMAND_WINDOW_MS = 60_000;
@@ -41,7 +47,7 @@ class CommandHandler {
         const [command, ...args] = body.trim().split(/\s+/);
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/youtube'];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir'];
         const isKnown = knownCommands.includes(command);
 
         // Só aplica rate limit para comandos válidos conhecidos
@@ -74,8 +80,12 @@ class CommandHandler {
             return this.handlePiada(msg, chat);
         }
 
-        if (command === '/youtube') {
-            return this.handleYouTube(msg, chat, args);
+        // if (command === '/youtube') { 
+        //     return this.handleYouTube(msg, chat, args);
+        // }
+
+        if (command === '/proibir') {
+            return this.handleProibir(msg, chat);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -83,14 +93,9 @@ class CommandHandler {
 
     async handleBan(msg, chat) {
         const authorId = getSenderId(msg);
-        const groupParticipants = chat.participants;
-        const isAdmin = groupParticipants.some(
-            (participant) =>
-                participant.id._serialized === authorId &&
-                (participant.isAdmin || participant.isSuperAdmin)
-        );
+        
 
-        if (!isAdmin) {
+        if (!this.isAdmin(msg, chat)) {
             await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
             return;
         }
@@ -106,10 +111,10 @@ class CommandHandler {
         try {
             await chat.removeParticipants([userToBan]);
             await msg.reply('Finalmente, um pouco de silêncio. O estorvo foi removido e o ar parece mais limpo. Agora, saia do meu sol para que eu possa contemplar o nada em paz.');
-
+            const fromNumber = await this.getFromNumber(msg);
             await this.auditLogger?.log('BAN_EXECUTED', {
                 chatId: chat?.id?._serialized,
-                phone: authorId,
+                phone: fromNumber,
                 authorId,
                 targetId: userToBan,
                 messageId: msg.id?._serialized || msg.id?.id,
@@ -119,6 +124,90 @@ class CommandHandler {
             console.error(err);
             await msg.reply('❌ A lanterna falhou em encontrar o caminho da saída. O estorvo permanece entre nós, como uma mancha que não sai com água. Verificai se tendes o poder para tal ato ou se o destino decidiu que ainda deveis suportar a presença deste bípede sem penas.');
         }
+    }
+
+    async isAdmin(msg, chat) {
+        const author = await msg.getContact();
+        const authorKey = author.number;
+        const groupParticipants = chat.participants;
+        const normalize = (id) => String(id || '').replace(/\D/g, '');
+        msg._authorPhone = authorKey;
+        return groupParticipants.some((participant) => {
+            const participantKey = normalize(participant?.id?._serialized || participant?.id?.user);
+            return participantKey && participantKey === authorKey && (participant.isAdmin || participant.isSuperAdmin);
+        });
+    }
+
+    async getFromNumber(msg) {
+        if (msg._authorPhone) {
+            return msg._authorPhone;
+        }
+        const author = await msg.getContact();
+        msg._authorPhone = author.number;
+        return msg._authorPhone
+    }
+
+
+    async handleProibir(msg, chat) {
+        if (!(await this.isAdmin(msg, chat))) {
+            await msg.reply('❌ Apenas administradores podem usar este comando.');
+            return;
+        }
+
+        console.log(msg._authorPhone);
+
+        if (!msg.hasQuotedMsg) {
+            await msg.reply('❓ Responda a uma figurinha ou imagem com /proibir para bloquear o conteúdo.');
+            return;
+        }
+
+        const quotedMsg = await msg.getQuotedMessage();
+        if (!quotedMsg?.hasMedia) {
+            await msg.reply('❌ A mensagem respondida não tem mídia.');
+            return;
+        }
+
+        const media = await quotedMsg.downloadMedia();
+        if (!media) {
+            await msg.reply('❌ Não consegui baixar a mídia.');
+            return;
+        }
+
+        const bufferOriginal = Buffer.from(media.data, 'base64');
+        const md5 = require('node:crypto').createHash('md5').update(bufferOriginal).digest('hex');
+        const authorId = getSenderId(msg);
+
+        await prisma.mediaHash.upsert({
+            where: { md5 },
+            create: { md5, isNsfw: true },
+            update: { isNsfw: true }
+        });
+
+        try {
+            const evidencePath = await saveEvidence(bufferOriginal, {
+                messageId: quotedMsg.id?._serialized || quotedMsg.id?.id,
+                mimetype: media?.mimetype,
+                evidenceDir: process.env.NSFW_EVIDENCE_DIR
+            });
+            await quotedMsg.delete(true);
+            const authorPhone = await this.getFromNumber(msg);
+            await this.auditLogger?.log('IMAGE_BLOCKED', {
+                chatId: chat?.id?._serialized,
+                phone: authorPhone,
+                authorId,
+                messageId: msg.id?._serialized || msg.id?.id,
+                content: msg.caption || null,
+                details: {
+                    evidencePath
+                }
+            });
+        } catch (err) {
+            console.warn('Falha ao apagar mídia proibida:', err?.message || err);
+        }
+
+        
+
+        await msg.reply('✅ Conteúdo proibido e registrado.');
     }
 
     async handleOraculo(msg, chat) {
@@ -134,9 +223,9 @@ class CommandHandler {
         const text =
 `🤖 *Sobre o bot*
 
-Este bot foi criado para ajudar na moderação e trazer um pouco de diversão para o grupo:
-
-Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
+Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
+Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto.
+,`;
 
         await msg.reply(text);
     }
@@ -148,8 +237,11 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
 - 🔨 */ban*  
   Apenas administradores. Responda a uma mensagem com /ban para remover o usuário do grupo.
 
+- 🚫 */proibir*  
+  Apenas administradores. Responda uma imagem ou figurinha com /proibir para bloquear o conteúdo.
+
 - 🔮 */oraculo*  
-  Consulta o oráculo místico e retorna sua previsão da semana (uma vez por semana por usuário).
+  Consulta o oráculo místico e retorna sua previsão da semana.
 
 - 😂 */piada*  
   Envia uma piada aleatória do bot.
@@ -256,43 +348,44 @@ Desenvolvido com carinho pela equipe *DevTeam*, www.devteam.com.br.`;
             return;
         }
 
+        const execFileAsync = promisify(execFile);
+        const tmpName = `yt_${Date.now()}.mp4`;
+        const tmpPath = path.join(os.tmpdir(), tmpName);
+
         try {
-            const info = await ytdl.getInfo(url);
-            const durationSec = Number(info.videoDetails.lengthSeconds || 0);
+            await execFileAsync('yt-dlp', [
+                '--no-playlist',
+                '--match-filter',
+                'duration <= 120',
+                '--max-filesize',
+                '16M',
+                '-f',
+                'mp4',
+                '-o',
+                tmpPath,
+                url
+            ]);
 
-            if (durationSec > 120) {
-                await msg.reply('⏱️ Este vídeo é longo demais para a praça. Envie apenas vídeos curtos (até 2 minutos).');
-                return;
-            }
-
-            const chunks = [];
-            await new Promise((resolve, reject) => {
-                ytdl(url, {
-                    quality: 'lowest',
-                    filter: 'audioandvideo'
-                })
-                    .on('data', (chunk) => chunks.push(chunk))
-                    .on('end', resolve)
-                    .on('error', reject);
-            });
-
-            const buffer = Buffer.concat(chunks);
+            const buffer = await fs.readFile(tmpPath);
             const maxBytes = 16 * 1024 * 1024; // ~16MB
-
             if (buffer.length > maxBytes) {
                 await msg.reply('📦 O vídeo que trouxeste pesa mais do que esta ágora suporta. Tente um link mais curto ou leve.');
                 return;
             }
 
-            const filename = `${info.videoDetails.title || 'video'}.mp4`;
-            const media = new MessageMedia('video/mp4', buffer.toString('base64'), filename);
-
-            await chat.sendMessage(media, {
-                sendVideoAsDocument: false
-            });
+            const media = new MessageMedia('video/mp4', buffer.toString('base64'), 'video.mp4');
+            await chat.sendMessage(media, { sendVideoAsDocument: false });
         } catch (err) {
+            if (err?.code === 'ENOENT') {
+                await msg.reply('❌ yt-dlp não está instalado no servidor. Instale e tente novamente.');
+                return;
+            }
             console.error('Erro ao baixar vídeo do YouTube:', err);
             await msg.reply('❌ Até os bytes se rebelam às vezes. Não consegui trazer este vídeo do YouTube; tente outro link ou tente mais tarde.');
+        } finally {
+            try {
+                await fs.unlink(tmpPath);
+            } catch (_) {}
         }
     }
 }

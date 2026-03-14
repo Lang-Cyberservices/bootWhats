@@ -32,7 +32,7 @@ async function init() {
     }
 
     try {
-        model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
+        model = await nsfw.load();
         imageAnalyzer = new ImageAnalyzer(model, {
             auditLogger,
             evidenceDir: process.env.NSFW_EVIDENCE_DIR,
@@ -78,7 +78,7 @@ client.on('message', async (msg) => {
 
     if (!chat?.isGroup) return;
 
-    await messageFilter.handle(msg, chat);
+    // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);
     await commandHandler.handle(msg, chat);
 });

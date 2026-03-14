@@ -1,8 +1,14 @@
 const sharp = require('sharp');
 const tf = require('@tensorflow/tfjs-node');
 const fs = require('node:fs/promises');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const path = require('node:path');
 const { getSenderId } = require('./messageUtils');
+const { saveEvidence } = require('./mediaUtils');
+const { prisma } = require('./database');
 
 
 class ImageAnalyzer {
@@ -13,6 +19,10 @@ class ImageAnalyzer {
         this.auditLogger = options.auditLogger;
         this.evidenceDir = options.evidenceDir || './storage/deleted-media';
         this.inputSize = options.inputSize || this.getModelInputSize(model) || 299;
+        this.laionPython = options.laionPython || process.env.LAION_PYTHON || 'python3';
+        this.laionScript = options.laionScript || process.env.LAION_SCRIPT || 'tools/laion_score.py';
+        this.laionThreshold = Number(process.env.LAION_THRESHOLD ?? 0.5);
+        this.isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
     }
 
            
@@ -21,25 +31,81 @@ class ImageAnalyzer {
         if (!this.model) return;
         if (!msg.hasMedia || (msg.type !== 'image' && msg.type !== 'sticker')) return;
 
-        console.log(`Analisando mídia de: ${msg.author}...`);
+        if (this.isDev) {
+            console.log(`Analisando mídia de: ${msg.author}...`);
+        }
 
         try {
             const media = await msg.downloadMedia();
             if (!media) return;
 
             const bufferOriginal = Buffer.from(media.data, 'base64');
+            const mime = (media.mimetype || '').toLowerCase();
+            const md5 = crypto.createHash('md5').update(bufferOriginal).digest('hex');
+            const cached = await prisma.mediaHash.findUnique({ where: { md5 } });
+            if (cached) {
+                if (cached.isNsfw) {
+                    await this.handleNsfw(msg, chat, media, bufferOriginal, [{ className: 'Cached', probability: 1 }]);
+                }
+                return;
+            }
             const inputSize = this.getModelInputSize(this.model) || this.inputSize;
-            const bufferProcessado = await sharp(bufferOriginal)
-                .toFormat('png')
-                .resize(inputSize, inputSize, { fit: 'fill' })
-                .toBuffer();
+            const isAnimated = mime.includes('gif') || mime.includes('webp') || msg.type === 'sticker';
 
-            const imageTensor = tf.node.decodeImage(bufferProcessado, 3);
-            const predictions = await this.model.classify(imageTensor);
-            imageTensor.dispose();
+            const frameBuffers = [];
+            if (isAnimated) {
+                const frameCount = await sharp(bufferOriginal, { animated: true }).metadata()
+                    .then((m) => m.pages || 1)
+                    .catch(() => 1);
+                const lastIndex = Math.max(0, frameCount - 1);
 
-            console.log('Imagem processada e pronta para o TensorFlow!');
-            console.log('Resultado da análise:', predictions);
+                const firstFrame = await sharp(bufferOriginal, { animated: true, page: 0 })
+                    .toFormat('png')
+                    .resize(inputSize, inputSize, { fit: 'fill' })
+                    .toBuffer();
+                frameBuffers.push(firstFrame);
+
+                if (lastIndex !== 0) {
+                    const lastFrame = await sharp(bufferOriginal, { animated: true, page: lastIndex })
+                        .toFormat('png')
+                        .resize(inputSize, inputSize, { fit: 'fill' })
+                        .toBuffer();
+                    frameBuffers.push(lastFrame);
+                }
+            } else {
+                const bufferProcessado = await sharp(bufferOriginal)
+                    .toFormat('png')
+                    .resize(inputSize, inputSize, { fit: 'fill' })
+                    .toBuffer();
+                frameBuffers.push(bufferProcessado);
+            }
+
+            let predictions = [];
+            for (const frameBuffer of frameBuffers) {
+                const imageTensor = tf.node.decodeImage(frameBuffer, 3);
+                const framePredictions = await this.model.classify(imageTensor);
+                console.log(framePredictions)
+                imageTensor.dispose();
+                if (!predictions.length) {
+                    predictions = framePredictions;
+                } else {
+                    // keep max probability per class across frames
+                    const byClass = new Map(predictions.map((p) => [p.className, p.probability]));
+                    for (const p of framePredictions) {
+                        const prev = byClass.get(p.className) ?? 0;
+                        if (p.probability > prev) byClass.set(p.className, p.probability);
+                    }
+                    
+                    predictions = Array.from(byClass.entries()).map(([className, probability]) => ({
+                        className,
+                        probability
+                    }));
+                }
+            }
+
+        if (this.isDev) {
+            // console.log('Resultado da análise NSFWJS:', predictions);
+        }
 
             const getScore = (className) => {
                 const found = predictions.find((p) => p.className === className);
@@ -51,56 +117,33 @@ class ImageAnalyzer {
             const sexyScore = getScore('Sexy');
             const hentaiScore = getScore('Hentai');
 
-            const isNSFW =
-                pornScore > 0.85 || sexyScore > 0.80 || hentaiScore > 0.80;
+            const nsfwScore = Math.max(pornScore, sexyScore, hentaiScore);
 
-            if (isNSFW) {
-                const evidencePath = await this.saveEvidence(msg, media, bufferOriginal);
-                await msg.delete(true);
-                await chat.sendMessage(
-                    `⚠️ @${msg.author.split('@')[0]}, conteúdo impróprio não é permitido neste grupo.`,
-                    { mentions: [msg.author] }
-                );
-
-                const authorId = getSenderId(msg);
-                await this.auditLogger?.log('IMAGE_REMOVED', {
-                    chatId: chat?.id?._serialized,
-                    phone: authorId,
-                    authorId,
-                    messageId: msg.id?._serialized || msg.id?.id,
-                    content: msg.caption || null,
-                    details: {
-                        evidencePath,
-                        predictions
-                    }
-                });
-
-                console.log('🚫 Mídia removida!');
+            if (nsfwScore >= 0.98) {
+                await this.handleNsfw(msg, chat, media, bufferOriginal, predictions);
+                await this.recordStickerHash(md5, true);
+                return;
             }
+
+            if (nsfwScore >= 0.60 && nsfwScore < 0.95) {
+                const laionScore = await this.getLaionScore(bufferOriginal);
+                if (this.isDev) {
+                    console.log('LAION score:', laionScore);
+                }
+                if (laionScore >= this.laionThreshold) {
+                    await this.handleNsfw(msg, chat, media, bufferOriginal, predictions);
+                    await this.recordStickerHash(md5, true);
+                } else if (isSticker) {
+                    await this.recordStickerHash(md5, false);
+                }
+                return;
+            }
+
+            // abaixo de 0.60: safe
+            await this.recordStickerHash(md5, false);
         } catch (err) {
             console.error('Erro no processamento da imagem:', err);
         }
-    }
-
-    async saveEvidence(msg, media, bufferOriginal) {
-        await fs.mkdir(this.evidenceDir, { recursive: true });
-
-        const rawMessageId = msg.id?._serialized || msg.id?.id || `${Date.now()}`;
-        const safeMessageId = String(rawMessageId).replace(/[^a-zA-Z0-9._-]/g, '_');
-        const extension = this.getExtension(media);
-        const fileName = `${Date.now()}_${safeMessageId}.${extension}`;
-        const targetPath = path.resolve(this.evidenceDir, fileName);
-
-        await fs.writeFile(targetPath, bufferOriginal);
-
-        return targetPath;
-    }
-
-    getExtension(media) {
-        if (!media?.mimetype) return 'bin';
-        const [, subtype] = media.mimetype.split('/');
-        if (!subtype) return 'bin';
-        return subtype.split(';')[0].replace('+xml', '');
     }
 
     getModelInputSize(model) {
@@ -112,8 +155,75 @@ class ImageAnalyzer {
         return Number.isFinite(size) ? size : null;
     }
 
-   
+    async handleNsfw(msg, chat, media, bufferOriginal, predictions) {
+        const evidencePath = await saveEvidence(bufferOriginal, {
+            messageId: msg.id?._serialized || msg.id?.id,
+            mimetype: media?.mimetype,
+            evidenceDir: this.evidenceDir
+        });
+        await msg.delete(true);
+        await chat.sendMessage(
+            `⚠️ @${msg.author.split('@')[0]}, conteúdo impróprio não é permitido neste grupo.`,
+            { mentions: [msg.author] }
+        );
+        const author = await msg.getContact();
+        const authorPhone = author.number;
 
+        const authorId = getSenderId(msg);
+        await this.auditLogger?.log('IMAGE_REMOVED', {
+            chatId: chat?.id?._serialized,
+            phone: authorPhone,
+            authorId,
+            messageId: msg.id?._serialized || msg.id?.id,
+            content: msg.caption || null,
+            details: {
+                evidencePath,
+                predictions
+            }
+        });
+
+        console.log('🚫 Mídia removida!');
+    }
+
+    async getLaionScore(bufferOriginal) {
+        const execFileAsync = promisify(execFile);
+        const tmpName = `${crypto.randomUUID()}.png`;
+        const tmpPath = path.join(os.tmpdir(), tmpName);
+
+        await fs.writeFile(tmpPath, bufferOriginal);
+        try {
+            const { stdout, stderr } = await execFileAsync(
+                this.laionPython,
+                [this.laionScript, '--image', tmpPath, '--device', 'cpu'],
+                { timeout: 120000 }
+            );
+            
+            const parsed = JSON.parse(stdout.trim());
+            
+            const score = Number(parsed?.score);
+            if (Number.isNaN(score)) {
+                throw new Error('LAION score inválido');
+            }
+            
+            return score;
+        }  finally {
+            try {
+                await fs.unlink(tmpPath);
+            } catch (_) {}
+        }
+    }
+
+    async recordStickerHash(md5, isNsfw) {
+        try {
+            await prisma.mediaHash.upsert({
+                where: { md5 },
+                create: { md5, isNsfw },
+                update: { isNsfw: isNsfw ? true : undefined }
+            });
+        } catch (err) {
+            console.warn('Falha ao salvar sticker hash:', err?.message || err);
+        }
+    }
 
 }
 

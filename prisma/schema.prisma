@@ -45,6 +45,15 @@ model PowerAnimal {
   @@map("power_animals")
 }
 
+model MediaHash {
+  id        Int      @id @default(autoincrement())
+  md5       String   @unique
+  isNsfw    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("media_hashes")
+}
+
 model PhilosopherProtector {
   id          Int      @id @default(autoincrement())
   name        String
