@@ -32,7 +32,7 @@ async function init() {
     }
 
     try {
-        model = await nsfw.load();
+        model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
         imageAnalyzer = new ImageAnalyzer(model, {
             auditLogger,
             evidenceDir: process.env.NSFW_EVIDENCE_DIR,

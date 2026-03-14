@@ -36,7 +36,13 @@ class ImageAnalyzer {
         }
 
         try {
-            const media = await msg.downloadMedia();
+            let media;
+            try {
+                media = await msg.downloadMedia();
+            } catch (err) {
+                console.warn('Falha ao baixar mídia:', err?.message || err);
+                return;
+            }
             if (!media) return;
 
             const bufferOriginal = Buffer.from(media.data, 'base64');
@@ -84,7 +90,6 @@ class ImageAnalyzer {
             for (const frameBuffer of frameBuffers) {
                 const imageTensor = tf.node.decodeImage(frameBuffer, 3);
                 const framePredictions = await this.model.classify(imageTensor);
-                console.log(framePredictions)
                 imageTensor.dispose();
                 if (!predictions.length) {
                     predictions = framePredictions;
@@ -104,7 +109,7 @@ class ImageAnalyzer {
             }
 
         if (this.isDev) {
-            // console.log('Resultado da análise NSFWJS:', predictions);
+            console.log('Resultado da análise NSFWJS:', predictions);
         }
 
             const getScore = (className) => {
@@ -130,16 +135,19 @@ class ImageAnalyzer {
                 if (this.isDev) {
                     console.log('LAION score:', laionScore);
                 }
+                predictions.push({
+                    className: 'LAION',
+                    probability: laionScore
+                });
                 if (laionScore >= this.laionThreshold) {
                     await this.handleNsfw(msg, chat, media, bufferOriginal, predictions);
                     await this.recordStickerHash(md5, true);
-                } else if (isSticker) {
+                } else {
                     await this.recordStickerHash(md5, false);
                 }
                 return;
             }
 
-            // abaixo de 0.60: safe
             await this.recordStickerHash(md5, false);
         } catch (err) {
             console.error('Erro no processamento da imagem:', err);
@@ -166,23 +174,27 @@ class ImageAnalyzer {
             `⚠️ @${msg.author.split('@')[0]}, conteúdo impróprio não é permitido neste grupo.`,
             { mentions: [msg.author] }
         );
+
         const author = await msg.getContact();
         const authorPhone = author.number;
-
         const authorId = getSenderId(msg);
-        await this.auditLogger?.log('IMAGE_REMOVED', {
-            chatId: chat?.id?._serialized,
-            phone: authorPhone,
-            authorId,
-            messageId: msg.id?._serialized || msg.id?.id,
-            content: msg.caption || null,
-            details: {
-                evidencePath,
-                predictions
-            }
-        });
 
-        console.log('🚫 Mídia removida!');
+        try{
+            await this.auditLogger?.log('IMAGE_REMOVED', {
+                chatId: chat?.id?._serialized,
+                phone: authorPhone,
+                authorId,
+                messageId: msg.id?._serialized || msg.id?.id,
+                content: msg.caption || null,
+                details: {
+                    evidencePath,
+                    predictions
+                }
+            });
+        } catch (err) {
+            console.warn('Falha ao salvar sticker hash:', err?.message || err);
+        }
+        
     }
 
     async getLaionScore(bufferOriginal) {
