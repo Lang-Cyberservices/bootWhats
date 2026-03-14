@@ -204,25 +204,38 @@ class ImageAnalyzer {
 
         await fs.writeFile(tmpPath, bufferOriginal);
         try {
+            const scriptPath = await this.resolveLaionScriptPath();
             const { stdout, stderr } = await execFileAsync(
                 this.laionPython,
-                [this.laionScript, '--image', tmpPath, '--device', 'cpu'],
+                [scriptPath, '--image', tmpPath, '--device', 'cpu'],
                 { timeout: 120000 }
             );
-            
+
             const parsed = JSON.parse(stdout.trim());
-            
             const score = Number(parsed?.score);
             if (Number.isNaN(score)) {
                 throw new Error('LAION score inválido');
             }
-            
             return score;
         }  finally {
             try {
                 await fs.unlink(tmpPath);
             } catch (_) {}
         }
+    }
+
+    async resolveLaionScriptPath() {
+        const candidate = this.laionScript;
+        const absCandidate = path.isAbsolute(candidate)
+            ? candidate
+            : path.resolve(process.cwd(), candidate);
+        try {
+            const stat = await fs.stat(absCandidate);
+            if (stat.isDirectory()) {
+                return path.join(absCandidate, 'laion_score.py');
+            }
+        } catch (_) {}
+        return absCandidate;
     }
 
     async recordStickerHash(md5, isNsfw) {
