@@ -70,3 +70,12 @@ model Joke {
 
   @@map("jokes")
 }
+
+model Admin {
+  phone          String  @id @db.VarChar(32)
+  authorId       String  @db.VarChar(64)
+  password       String  @db.VarChar(255)
+  expirePassword Boolean @default(true) @map("expire_password")
+
+  @@map("admins")
+}
