@@ -51,7 +51,7 @@ class ImageAnalyzer {
             const cached = await prisma.mediaHash.findUnique({ where: { md5 } });
             if (cached) {
                 if (cached.isNsfw) {
-                    await this.handleNsfw(msg, chat, media, bufferOriginal, [{ className: 'Cached', probability: 1 }]);
+                    await this.handleNsfw(msg, chat, media, bufferOriginal, [{ className: 'Cached', probability: 1 }], md5);
                 }
                 return;
             }
@@ -125,7 +125,7 @@ class ImageAnalyzer {
             const nsfwScore = Math.max(pornScore, sexyScore, hentaiScore);
 
             if (nsfwScore >= 0.98) {
-                await this.handleNsfw(msg, chat, media, bufferOriginal, predictions);
+                await this.handleNsfw(msg, chat, media, bufferOriginal, predictions, md5);
                 await this.recordStickerHash(md5, true);
                 return;
             }
@@ -140,7 +140,7 @@ class ImageAnalyzer {
                     probability: laionScore
                 });
                 if (laionScore >= this.laionThreshold) {
-                    await this.handleNsfw(msg, chat, media, bufferOriginal, predictions);
+                    await this.handleNsfw(msg, chat, media, bufferOriginal, predictions, md5);
                     await this.recordStickerHash(md5, true);
                 } else {
                     await this.recordStickerHash(md5, false);
@@ -163,11 +163,12 @@ class ImageAnalyzer {
         return Number.isFinite(size) ? size : null;
     }
 
-    async handleNsfw(msg, chat, media, bufferOriginal, predictions) {
+    async handleNsfw(msg, chat, media, bufferOriginal, predictions, md5) {
         const evidencePath = await saveEvidence(bufferOriginal, {
             messageId: msg.id?._serialized || msg.id?.id,
             mimetype: media?.mimetype,
-            evidenceDir: this.evidenceDir
+            evidenceDir: this.evidenceDir,
+            md5
         });
         await msg.delete(true);
         await chat.sendMessage(
