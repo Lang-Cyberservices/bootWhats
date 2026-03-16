@@ -10,6 +10,10 @@ const AuditLogger = require('./services/AuditLogger');
 const OracleService = require('./services/OracleService');
 const { connectDatabase } = require('./services/database');
 
+const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
+const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
+let seenGroupIdsInDev = null;
+
 let model;
 let imageAnalyzer;
 const auditLogger = new AuditLogger();
@@ -61,6 +65,9 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
     console.log('🚀 Monitor de grupos ATIVADO!');
+    if (isDev && devGroupId) {
+        console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
+    }
 });
 
 client.on('message', async (msg) => {
@@ -77,6 +84,17 @@ client.on('message', async (msg) => {
     }
 
     if (!chat?.isGroup) return;
+
+    const chatId = chat?.id?._serialized || chat?.id?.user || '';
+
+    // Em desenvolvimento: processar apenas o grupo definido em DEV_GROUP_ID
+    if (isDev && devGroupId) {
+        if (chatId !== devGroupId) return;
+        
+    } else  {
+        if (chatId === devGroupId) return;
+        
+    }
 
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);

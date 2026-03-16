@@ -13,6 +13,37 @@ function getCurrentWeekKey(date = new Date()) {
     return `${year}-W${week}`;
 }
 
+/** Retorna { startDate, endDate, nextDate } para um weekKey (ex: "2025-W11"). */
+function getWeekDateRange(weekKey) {
+    const match = String(weekKey).match(/^(\d{4})-W(\d{1,2})$/);
+    if (!match) return null;
+    const year = parseInt(match[1], 10);
+    const week = parseInt(match[2], 10);
+    const startOfYear = new Date(year, 0, 1);
+    const startDate = new Date(startOfYear);
+    startDate.setDate(startDate.getDate() + (week - 1) * 7);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 6);
+    const nextDate = new Date(endDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+    return { startDate, endDate, nextDate };
+}
+
+function formatDatePtBr(d) {
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/** Retorna o rodapé com período da previsão e quando pode gerar nova. */
+function getDateRangeFooter(weekKey) {
+    const range = getWeekDateRange(weekKey);
+    if (!range) return '';
+    const { startDate, endDate, nextDate } = range;
+    return (
+        `📅 _Previsão de ${formatDatePtBr(startDate)} a ${formatDatePtBr(endDate)}._\n` +
+        `_A partir de ${formatDatePtBr(nextDate)} você poderá gerar uma nova previsão._`
+    );
+}
+
 class OracleService {
     constructor(auditLogger) {
         this.auditLogger = auditLogger;
@@ -47,7 +78,8 @@ class OracleService {
         });
 
         if (existing) {
-            await msg.reply(existing.message);
+            const footer = getDateRangeFooter(weekKey);
+            await msg.reply(footer ? `${existing.message}\n\n${footer}` : existing.message);
             await this.auditLogger?.log('ORACLE_REUSED', {
                 chatId: chat?.id?._serialized,
                 phone,
@@ -128,6 +160,7 @@ Importante:
                 return;
             }
 
+            const dateFooter = getDateRangeFooter(weekKey);
             const finalMessage =
 `🔮 *Oráculo da semana*\n` +
 `🐾 *Animal de poder*: ${animalName}\n` +
@@ -135,7 +168,8 @@ Importante:
 `${response}\n\n` +
 `🛡️ *Filósofo protetor*: ${philosopher.name}\n` +
 `_${philosopher.description}_\n\n` +
-`💡 *${philosopher.phrase}*`;
+`💡 *${philosopher.phrase}*` +
+(dateFooter ? `\n\n${dateFooter}` : '');
 
             const created = await prisma.oraclePrediction.create({
                 data: {
