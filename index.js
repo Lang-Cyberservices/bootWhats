@@ -86,15 +86,11 @@ client.on('message', async (msg) => {
     if (!chat?.isGroup) return;
 
     const chatId = chat?.id?._serialized || chat?.id?.user || '';
-
     // Em desenvolvimento: processar apenas o grupo definido em DEV_GROUP_ID
     if (isDev && devGroupId) {
         if (chatId !== devGroupId) return;
-        
-    } else  {
-        if (chatId === devGroupId) return;
-        
-    }
+    } 
+    if (chatId === devGroupId) return;
 
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);
