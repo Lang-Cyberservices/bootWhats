@@ -71,7 +71,9 @@ class CommandHandler {
         }
 
         if (command === '/piada') {
-            return this.handlePiada(msg, chat);
+            return await msg.reply('📚 Antes de buscar o riso do outro, decidi decifrar a anatomia da alegria; pois quem se aventura no palco sem conhecer a alma da comédia, corre o risco de encontrar apenas o silêncio do próprio eco.');
+
+            // return this.handlePiada(msg, chat);
         }
 
         // if (command === '/youtube') { 
@@ -219,6 +221,7 @@ class CommandHandler {
 
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto.
+_versão: 1.2.0_
 ,`;
 
         await msg.reply(text);
@@ -302,7 +305,12 @@ Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear 
 
     async handlePiada(msg, _chat) {
         try {
-            const total = await prisma.joke.count();
+            const jokeModel = prisma?.joke;
+            const hasModelApi = jokeModel && typeof jokeModel.count === 'function' && typeof jokeModel.findMany === 'function';
+
+            const total = hasModelApi
+                ? await jokeModel.count()
+                : Number((await prisma.$queryRaw`SELECT COUNT(*) AS total FROM jokes`)[0]?.total || 0);
 
             if (!total) {
                 await msg.reply('😕 Numa cidade cheia de tolos, faltam-me justamente as piadas. ');
@@ -310,12 +318,9 @@ Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear 
             }
 
             const randomIndex = Math.floor(Math.random() * total);
-            const jokes = await prisma.joke.findMany({
-                skip: randomIndex,
-                take: 1
-            });
-
-            const joke = jokes[0];
+            const joke = hasModelApi
+                ? (await jokeModel.findMany({ skip: randomIndex, take: 1 }))[0]
+                : (await prisma.$queryRaw`SELECT id, text FROM jokes LIMIT 1 OFFSET ${randomIndex}`)[0];
 
             if (!joke) {
                 await msg.reply('😕 Até o humor, às vezes, foge da praça.');

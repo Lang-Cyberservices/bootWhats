@@ -34,13 +34,12 @@ function formatDatePtBr(d) {
 }
 
 /** Retorna o rodapé com período da previsão e quando pode gerar nova. */
-function getDateRangeFooter(weekKey) {
+function getDate(weekKey) {
     const range = getWeekDateRange(weekKey);
     if (!range) return '';
     const { startDate, endDate, nextDate } = range;
     return (
-        `📅 _Previsão de ${formatDatePtBr(startDate)} a ${formatDatePtBr(endDate)}._\n` +
-        `_A partir de ${formatDatePtBr(nextDate)} você poderá gerar uma nova previsão._`
+        `${formatDatePtBr(startDate)} a ${formatDatePtBr(endDate)}`
     );
 }
 
@@ -78,8 +77,7 @@ class OracleService {
         });
 
         if (existing) {
-            const footer = getDateRangeFooter(weekKey);
-            await msg.reply(footer ? `${existing.message}\n\n${footer}` : existing.message);
+            await msg.reply(existing.message);
             await this.auditLogger?.log('ORACLE_REUSED', {
                 chatId: chat?.id?._serialized,
                 phone,
@@ -125,7 +123,7 @@ Você é um oráculo misterioso e bem-humorado.
 Gere uma previsão curta (3 a 5 frases) para a semana da pessoa, em português do Brasil.
 Evite falar de morte, doenças graves ou temas sensíveis.
 De um conselho filosofico no final da previsão.
-Use um tom leve, divertido e positivo, como se fosse um horóscopo de jornal.
+Use um tom como se fosse um horóscopo de jornal.
 Não pergunte nada para o usuário, apenas faça a previsão.
 
 Informações de contexto:
@@ -160,16 +158,14 @@ Importante:
                 return;
             }
 
-            const dateFooter = getDateRangeFooter(weekKey);
             const finalMessage =
-`🔮 *Oráculo da semana*\n` +
+`🔮 *Oráculo da semana ` + `${getDate(weekKey)}\n *` +
 `🐾 *Animal de poder*: ${animalName}\n` +
 `🎲 *Número da sorte*: ${luckyNumberStr}\n\n` +
 `${response}\n\n` +
 `🛡️ *Filósofo protetor*: ${philosopher.name}\n` +
 `_${philosopher.description}_\n\n` +
-`💡 *${philosopher.phrase}*` +
-(dateFooter ? `\n\n${dateFooter}` : '');
+`💡 *${philosopher.phrase}*` ;
 
             const created = await prisma.oraclePrediction.create({
                 data: {

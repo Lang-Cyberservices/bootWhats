@@ -30,7 +30,10 @@ async function init() {
     try {
         await connectDatabase();
     } catch (e) {
-        console.error("❌ Erro ao conectar no banco de dados:", e);
+        // `connectDatabase` já imprime uma mensagem amigável em produção.
+        // Aqui evitamos printar o objeto inteiro (que vira um stack enorme).
+        const msg = (e && typeof e === 'object' && 'message' in e) ? e.message : String(e);
+        console.error(`❌ ${msg}`);
         // Mesmo sem banco, não inicializamos o bot, pois ele depende fortemente do Prisma.
         return;
     }
