@@ -153,11 +153,12 @@ async function main() {
   if (nsfwScore >= 0.98) {
     blocked = true;
     reason = 'NSFWJS';
-  } else if (nsfwScore >= 0.6 && nsfwScore < 0.95) {
+  } else if (nsfwScore >= 0.6 && nsfwScore < 0.98) {
     try {
       const laionPython = process.env.LAION_PYTHON || 'python3';
       const laionScript = process.env.LAION_SCRIPT || 'tools/laion_score.py';
       laionScore = await getLaionScore(buffer, laionPython, laionScript);
+      console.log('laionScore', laionScore);
       if (laionScore >= laionThreshold) {
         blocked = true;
         reason = 'LAION';

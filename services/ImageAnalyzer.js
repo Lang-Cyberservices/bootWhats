@@ -124,13 +124,13 @@ class ImageAnalyzer {
 
             const nsfwScore = Math.max(pornScore, sexyScore, hentaiScore);
 
-            if (nsfwScore >= 0.98) {
+            if (nsfwScore >= 0.95) {
                 await this.handleNsfw(msg, chat, media, bufferOriginal, predictions, md5);
                 await this.recordStickerHash(md5, true);
                 return;
             }
 
-            if (nsfwScore >= 0.60 && nsfwScore < 0.95) {
+            if (nsfwScore >= 0.65 && nsfwScore < 0.95) {
                 const laionScore = await this.getLaionScore(bufferOriginal);
                 if (this.isDev) {
                     console.log('LAION score:', laionScore);
