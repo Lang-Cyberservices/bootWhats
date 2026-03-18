@@ -38,6 +38,11 @@ class CommandHandler {
     constructor(auditLogger, oracleService) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
+        this.client = null;
+    }
+
+    setClient(client) {
+        this.client = client;
     }
 
     async handle(msg, chat) {
@@ -47,7 +52,7 @@ class CommandHandler {
         const [command, ...args] = body.trim().split(/\s+/);
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir'];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/estatisticas', '/estatiticas'];
         const isKnown = knownCommands.includes(command);
 
         if (command === '/ban') {
@@ -82,6 +87,10 @@ class CommandHandler {
 
         if (command === '/proibir') {
             return this.handleProibir(msg, chat);
+        }
+
+        if (command === '/estatisticas' ) {
+            return this.handleEstatisticas(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -215,6 +224,111 @@ class CommandHandler {
         await this.oracleService.getWeeklyPrediction(msg, chat);
     }
 
+    async handleEstatisticas(msg, chat, args) {
+        const raw = String(args?.[0] || '').toLowerCase().trim();
+        const mode = raw === 'diario' || raw === 'daily' ? 'day'
+            : raw === 'semanal' || raw === 'weekly' ? 'week'
+                : raw === 'mensal' || raw === 'monthly' ? 'month'
+                    : null;
+
+        let periodStart = null;
+        if (mode === 'day') {
+            periodStart = new Date();
+            periodStart.setHours(0, 0, 0, 0);
+        } else if (mode === 'week') {
+            periodStart = new Date();
+            const day = periodStart.getDay(); // 0=Dom, 1=Seg, ...
+            const diff = day === 0 ? -6 : 1 - day; // segunda como início da semana
+            periodStart.setDate(periodStart.getDate() + diff);
+            periodStart.setHours(0, 0, 0, 0);
+        } else if (mode === 'month') {
+            periodStart = new Date();
+            periodStart.setDate(1);
+            periodStart.setHours(0, 0, 0, 0);
+        }
+
+        const whereBase = { chatId: chat?.id?._serialized };
+        const statsSource = mode
+            ? prisma.messageStatsBucket
+            : prisma.messageStats;
+
+        if (!statsSource) {
+            await msg.reply('❌ Estatísticas ainda não estão disponíveis. Rode as migrations e tente novamente.');
+            return;
+        }
+
+        const where = mode
+            ? { ...whereBase, periodType: mode, periodStart }
+            : whereBase;
+
+        const [topMessages, topCommands] = await Promise.all([
+            statsSource.findMany({
+                where,
+                orderBy: { messagesCount: 'desc' },
+                take: 5
+            }),
+            statsSource.findMany({
+                where,
+                orderBy: { commandsCount: 'desc' },
+                take: 5
+            })
+        ]);
+
+        const uniqueIds = new Set([
+            ...topMessages.map((s) => s.authorId),
+            ...topCommands.map((s) => s.authorId)
+        ]);
+
+        const mentions = [];
+        const labelById = new Map();
+        if (this.client) {
+            for (const id of uniqueIds) {
+                try {
+                    const contact = await this.client.getContactById(id);
+                    if (contact) {
+                        mentions.push(contact);
+                        const label = contact?.number ? `@${contact.number}` : `@${id.split('@')[0]}`;
+                        labelById.set(id, label);
+                    }
+                } catch (e) {
+                    // Ignora falhas individuais
+                }
+            }
+        }
+
+        const fmt = (list, countKey) => {
+            if (!list.length) return ['(sem dados)'];
+            return list.map((s, i) => {
+                const label = labelById.get(s.authorId) || (s.phone ? `@${s.phone}` : `@${String(s.authorId).split('@')[0]}`);
+                return `${i + 1}. ${label} — ${s[countKey] || 0}`;
+            });
+        };
+
+        const title = mode === 'day'
+            ? 'Top 5 do dia'
+            : mode === 'week'
+                ? 'Top 5 da semana'
+                : mode === 'month'
+                    ? 'Top 5 do mês'
+                    : 'Top 5 gerais';
+
+        const text = [
+            `📊 *${title}*`,
+            '',
+            '🏆 *Quem mais fala:*',
+            ...fmt(topMessages, 'messagesCount'),
+            '',
+            '⚡ *Quem mais me usa:*',
+            ...fmt(topCommands, 'commandsCount')
+        ].join('\n');
+
+        if (mentions.length > 0) {
+            await chat.sendMessage(text, { mentions });
+        } else {
+            await msg.reply(text);
+        }
+    }
+
     async handleSobre(msg, _chat) {
         const text =
 `🤖 *Sobre o bot*
@@ -244,6 +358,9 @@ _versão: 1.2.1_`;
 
 - 🖼️ */sticker*  
   Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
+
+- 📊 */estatisticas*  
+  Exibe top 5 mensagens e comandos. Opcional: 'diario', 'semanal' ou 'mensal'.
 
 - ℹ️ */sobre*  
   Mostra um resumo sobre o bot e quem desenvolveu.
@@ -298,7 +415,7 @@ _versão: 1.2.1_`;
             });
         } catch (err) {
             console.error('Erro ao gerar sticker:', err);
-            await msg.reply('❌ Nem toda imagem nasceu para ser ícone. ');
+            await msg.reply('❌      ');
         }
     }
 
