@@ -76,9 +76,9 @@ class CommandHandler {
         }
 
         if (command === '/piada') {
-            return await msg.reply('📚 Antes de buscar o riso do outro, decidi decifrar a anatomia da alegria; pois quem se aventura no palco sem conhecer a alma da comédia, corre o risco de encontrar apenas o silêncio do próprio eco.');
+            // return await msg.reply('📚 Antes de buscar o riso do outro, decidi decifrar a anatomia da alegria; pois quem se aventura no palco sem conhecer a alma da comédia, corre o risco de encontrar apenas o silêncio do próprio eco.');
 
-            // return this.handlePiada(msg, chat);
+            return this.handlePiada(msg, chat);
         }
 
         // if (command === '/youtube') { 
@@ -443,7 +443,7 @@ _versão: 1.3_`;
                 return;
             }
 
-            await msg.reply(`😂 *Piada do bot (#${joke.id})*\n\n${joke.text}`);
+            await msg.reply(`😂 *Piada  do tio Diot (#${joke.id})*\n\n${joke.text}`);
         } catch (err) {
             console.error('Erro ao buscar piada:', err);
             await msg.reply('❌ Nem sempre a graça obedece ao clique. Não consegui buscar uma piada agora, tente novamente em alguns instantes.');
