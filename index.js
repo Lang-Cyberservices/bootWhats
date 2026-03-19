@@ -10,6 +10,8 @@ const AuditLogger = require('./services/AuditLogger');
 const OracleService = require('./services/OracleService');
 const { handleGroupJoin } = require('./services/WelcomeService');
 const { connectDatabase } = require('./services/database');
+const StatsCounter = require('./services/StatsCounter');
+const { getSenderId } = require('./services/messageUtils');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
@@ -22,6 +24,7 @@ const oracleService = new OracleService(auditLogger);
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const commandHandler = new CommandHandler(auditLogger, oracleService);
+let statsCounter;
 
 
 
@@ -38,6 +41,11 @@ async function init() {
         // Mesmo sem banco, não inicializamos o bot, pois ele depende fortemente do Prisma.
         return;
     }
+
+    statsCounter = new StatsCounter({
+        flushIntervalMs: Number(process.env.STATS_FLUSH_INTERVAL_MS) || undefined,
+        maxBuffer: Number(process.env.STATS_MAX_BUFFER) || undefined
+    });
 
     try {
         model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
@@ -62,6 +70,7 @@ const client = new Client({
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
+commandHandler.setClient(client);
 
 client.on('qr', (qr) => {
     qrcode.generate(qr, {small: true});
@@ -90,15 +99,30 @@ client.on('message', async (msg) => {
     if (!chat?.isGroup) return;
 
     const chatId = chat?.id?._serialized || chat?.id?.user || '';
-
     // Em desenvolvimento: processar apenas o grupo definido em DEV_GROUP_ID
     if (isDev && devGroupId) {
         if (chatId !== devGroupId) return;
-        
-    } else  {
+    } else{
         if (chatId === devGroupId) return;
-        
     }
+    const body = String(msg.body || '');
+    const isCommand = body.trim().startsWith('/');
+    const authorId = getSenderId(msg);
+    let authorPhone = msg._authorPhone || null;
+    if (!authorPhone) {
+        try {
+            const contact = await msg.getContact();
+            authorPhone = contact?.number || null;
+        } catch (e) {
+            authorPhone = null;
+        }
+    }
+    statsCounter?.trackMessage({
+        chatId,
+        authorId,
+        phone: authorPhone,
+        isCommand
+    });
 
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);

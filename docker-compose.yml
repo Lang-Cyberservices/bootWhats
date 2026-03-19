@@ -2,7 +2,6 @@ services:
   mariadb:
     image: mariadb:12.2
     container_name: mariadb
-    restart: always
 
     environment:
       MARIADB_ROOT_PASSWORD: 123root4

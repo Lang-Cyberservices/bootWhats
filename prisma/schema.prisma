@@ -54,6 +54,36 @@ model MediaHash {
   @@map("media_hashes")
 }
 
+model MessageStats {
+  id            Int      @id @default(autoincrement())
+  chatId        String
+  authorId      String
+  phone         String?
+  messagesCount Int      @default(0)
+  commandsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([chatId, authorId])
+  @@map("message_stats")
+}
+
+model MessageStatsBucket {
+  id            Int      @id @default(autoincrement())
+  chatId        String
+  authorId      String
+  phone         String?
+  periodType    String   @db.VarChar(16)
+  periodStart   DateTime
+  messagesCount Int      @default(0)
+  commandsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([chatId, authorId, periodType, periodStart])
+  @@map("message_stats_buckets")
+}
+
 model PhilosopherProtector {
   id          Int      @id @default(autoincrement())
   name        String
