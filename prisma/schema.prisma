@@ -109,3 +109,16 @@ model Admin {
 
   @@map("admins")
 }
+
+model WelcomeConfig {
+  id              Int      @id @default(autoincrement())
+  chatId           String   @unique
+  message          String   @db.Text
+  peopleToTrigger  Int      @default(1)
+  counter          Int      @default(0)
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("welcome_configs")
+}

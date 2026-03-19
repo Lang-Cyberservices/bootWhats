@@ -8,6 +8,7 @@ const ImageAnalyzer = require('./services/ImageAnalyzer');
 const CommandHandler = require('./services/CommandHandler');
 const AuditLogger = require('./services/AuditLogger');
 const OracleService = require('./services/OracleService');
+const { handleGroupJoin } = require('./services/WelcomeService');
 const { connectDatabase } = require('./services/database');
 const StatsCounter = require('./services/StatsCounter');
 const { getSenderId } = require('./services/messageUtils');
@@ -126,6 +127,29 @@ client.on('message', async (msg) => {
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);
     await commandHandler.handle(msg, chat);
+});
+
+client.on('group_join', async (notification) => {
+    let chat;
+    try {
+        chat = await notification.getChat();
+    } catch (e) {
+        console.error('Erro ao obter chat do group_join:', e);
+        return;
+    }
+
+    if (!chat?.isGroup) return;
+
+    const chatId = chat?.id?._serialized || chat?.id?.user || '';
+
+    // Em desenvolvimento: processar apenas o grupo definido em DEV_GROUP_ID
+    if (isDev && devGroupId) {
+        if (chatId !== devGroupId) return;
+    } else  {
+        if (chatId === devGroupId) return;
+    }
+
+    await handleGroupJoin(notification, chat, { auditLogger });
 });
 
 init(); // Inicia o carregamento da IA e depois o bot
