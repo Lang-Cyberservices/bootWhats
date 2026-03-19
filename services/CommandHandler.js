@@ -52,7 +52,7 @@ class CommandHandler {
         const [command, ...args] = body.trim().split(/\s+/);
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/estatisticas', '/estatiticas'];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank' ];
         const isKnown = knownCommands.includes(command);
 
         if (command === '/ban') {
@@ -89,7 +89,7 @@ class CommandHandler {
             return this.handleProibir(msg, chat);
         }
 
-        if (command === '/estatisticas' ) {
+        if (command === '/rank' ) {
             return this.handleEstatisticas(msg, chat, args);
         }
 
@@ -335,7 +335,7 @@ class CommandHandler {
 
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto.
-_versão: 1.4_`;
+_versão: 1.4.1_`;
 
         await msg.reply(text);
     }
@@ -359,7 +359,7 @@ _versão: 1.4_`;
 - 🖼️ */sticker*  
   Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
 
-- 📊 */estatisticas*  
+- 📊 */rank*  
   Exibe top 5 mensagens e comandos. Opcional: 'diario', 'semanal' ou 'mensal'.
 
 - ℹ️ */sobre*  
