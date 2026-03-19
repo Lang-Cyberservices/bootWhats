@@ -11,6 +11,15 @@
     <style>
         body { background: radial-gradient(circle at top, #f5f7ff 0%, #eef2f7 40%, #f8f9fb 100%); }
         .brand { letter-spacing: 0.08em; font-weight: 700; }
+        .login-hero {
+            width: 246px;
+            height: 246px;
+            object-fit: cover;
+            border-radius: 999px;
+            border: 4px solid rgba(13, 110, 253, 0.15);
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+            background: #fff;
+        }
     </style>
 </head>
 <body>
@@ -18,7 +27,8 @@
     <div class="row justify-content-center">
         <div class="col-12 col-md-6 col-lg-5">
             <div class="text-center mb-4">
-                <div class="brand text-uppercase text-primary">Gestao</div>
+                <img class="login-hero mb-3" src="/img/diogenes.jpg" alt="Diogenes">
+                <div class="brand text-uppercase text-primary">Gestao Diogenes</div>
                 <h1 class="h3 mt-2">Bem-vindo</h1>
                 <p class="text-secondary mb-0">Acesse sua conta de administracao</p>
             </div>
