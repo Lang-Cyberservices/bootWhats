@@ -443,7 +443,7 @@ _versão: 1.4_`;
                 return;
             }
 
-            await msg.reply(`😂 *Piada  do tio Diot (#${joke.id})*\n\n${joke.text}`);
+            await msg.reply(`😂 *Piada  do tio Dio (#${joke.id})*\n\n${joke.text}`);
         } catch (err) {
             console.error('Erro ao buscar piada:', err);
             await msg.reply('❌ Nem sempre a graça obedece ao clique. Não consegui buscar uma piada agora, tente novamente em alguns instantes.');
