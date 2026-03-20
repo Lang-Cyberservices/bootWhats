@@ -11,7 +11,7 @@ final class SystemController
         $error = null;
         $success = null;
         $restartOutput = null;
-        $pm2Bin = getenv('PM2_BIN') ?: 'pm2';
+        $pm2Bin = "/home/lang/.nvm/versions/node/v22.18.0/bin/pm2";
         $pm2Bin = escapeshellcmd($pm2Bin);
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
