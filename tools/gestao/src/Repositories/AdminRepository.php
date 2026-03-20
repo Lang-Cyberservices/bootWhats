@@ -43,4 +43,29 @@ final class AdminRepository
             'password' => $passwordHash
         ]);
     }
+
+    /** @return array<int, array{phone:string,authorId:string,expire_password:int}> */
+    public function listAll(): array
+    {
+        $stmt = $this->pdo->query('SELECT phone, authorId, expire_password FROM admins ORDER BY phone ASC');
+        $rows = $stmt->fetchAll();
+        return $rows === false ? [] : $rows;
+    }
+
+    public function resetPassword(string $phone, string $passwordHash): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE admins SET password = :password, expire_password = 1 WHERE phone = :phone'
+        );
+        $stmt->execute([
+            'phone' => $phone,
+            'password' => $passwordHash
+        ]);
+    }
+
+    public function delete(string $phone): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM admins WHERE phone = :phone');
+        $stmt->execute(['phone' => $phone]);
+    }
 }

@@ -21,6 +21,20 @@ model Log {
   @@map("logs")
 }
 
+model CommandLog {
+  id        Int      @id @default(autoincrement())
+  command   String
+  args      String?  @db.Text
+  chatId    String?
+  chatName  String?
+  authorId  String?
+  phone     String?
+  messageId String?
+  createdAt DateTime @default(now())
+
+  @@map("command_logs")
+}
+
 model OraclePrediction {
   id        Int      @id @default(autoincrement())
   phone     String

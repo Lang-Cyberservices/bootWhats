@@ -8,6 +8,7 @@ use Gestao\Middleware;
 use Gestao\Controllers\AuthController;
 use Gestao\Controllers\AdminController;
 use Gestao\Controllers\JokeController;
+use Gestao\Controllers\SystemController;
 use Gestao\Controllers\WelcomeController;
 use Gestao\Repositories\AdminRepository;
 use Gestao\Repositories\JokeRepository;
@@ -23,6 +24,7 @@ require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
 require __DIR__ . '/../src/Controllers/JokeController.php';
+require __DIR__ . '/../src/Controllers/SystemController.php';
 require __DIR__ . '/../src/Controllers/WelcomeController.php';
 
 session_start();
@@ -37,6 +39,7 @@ $middleware = new Middleware($adminsRepo);
 $authController = new AuthController($auth, $adminsRepo);
 $adminController = new AdminController($adminsRepo);
 $jokeController = new JokeController($jokesRepo);
+$systemController = new SystemController();
 $welcomeController = new WelcomeController($welcomeRepo);
 
 $route = (string) ($_GET['route'] ?? 'jokes');
@@ -62,6 +65,9 @@ switch ($route) {
         break;
     case 'welcome':
         $welcomeController->index();
+        break;
+    case 'system':
+        $systemController->index();
         break;
     case 'jokes':
     default:
