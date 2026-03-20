@@ -48,24 +48,52 @@ final class AdminController
         $success = null;
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $phone = trim((string) ($_POST['phone'] ?? ''));
-            $authorId = trim((string) ($_POST['authorId'] ?? ''));
-            $password = (string) ($_POST['password'] ?? '');
+            $action = (string) ($_POST['action'] ?? 'create');
 
-            if ($phone === '' || $authorId === '' || $password === '') {
-                $error = 'Preencha todos os campos.';
-            } else {
-                $existing = $this->admins->findByPhone($phone);
-                if ($existing !== null) {
-                    $error = 'Telefone ja cadastrado.';
+            if ($action === 'reset') {
+                $phone = trim((string) ($_POST['phone'] ?? ''));
+                $password = (string) ($_POST['password'] ?? '');
+                if ($phone === '' || $password === '') {
+                    $error = 'Informe telefone e nova senha.';
                 } else {
-                    $hash = password_hash($password, PASSWORD_DEFAULT);
-                    $this->admins->create($phone, $authorId, $hash);
-                    $success = 'Administrador criado com expire_password = 1.';
+                    $existing = $this->admins->findByPhone($phone);
+                    if ($existing === null) {
+                        $error = 'Administrador nao encontrado.';
+                    } else {
+                        $hash = password_hash($password, PASSWORD_DEFAULT);
+                        $this->admins->resetPassword($phone, $hash);
+                        $success = 'Senha redefinida e expiracao ativada.';
+                    }
+                }
+            } elseif ($action === 'delete') {
+                $phone = trim((string) ($_POST['phone'] ?? ''));
+                if ($phone === '') {
+                    $error = 'Telefone invalido.';
+                } else {
+                    $this->admins->delete($phone);
+                    $success = 'Administrador removido.';
+                }
+            } else {
+                $phone = trim((string) ($_POST['phone'] ?? ''));
+                $authorId = trim((string) ($_POST['authorId'] ?? ''));
+                $password = (string) ($_POST['password'] ?? '');
+
+                if ($phone === '' || $authorId === '' || $password === '') {
+                    $error = 'Preencha todos os campos.';
+                } else {
+                    $existing = $this->admins->findByPhone($phone);
+                    if ($existing !== null) {
+                        $error = 'Telefone ja cadastrado.';
+                    } else {
+                        $hash = password_hash($password, PASSWORD_DEFAULT);
+                        $this->admins->create($phone, $authorId, $hash);
+                        $success = 'Administrador criado com expire_password = 1.';
+                    }
                 }
             }
         }
 
+        $admins = $this->admins->listAll();
         require __DIR__ . '/../Views/admins.php';
     }
 }

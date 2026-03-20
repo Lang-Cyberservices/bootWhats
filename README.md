@@ -43,6 +43,15 @@ node index.js
 ```
 No primeiro uso, escaneie o QR do WhatsApp Web. O estado da sessão fica em `.wwebjs_auth`.
 
+## Ferramenta de gestão
+O painel de gestão fica em `tools/gestao` e permite administrar admins, piadas, boas-vindas e status do sistema.
+
+### Modo desenvolvedor (PHP embutido)
+Para subir o painel localmente em modo desenvolvedor:
+```bash
+php -S localhost:8080 -t tools/gestao/public
+```
+
 ## Variáveis de ambiente principais
 Veja `.env_example` para todas as opções. As mais usadas:
 - `DATABASE_URL`: conexão MariaDB.

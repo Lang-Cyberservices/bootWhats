@@ -54,6 +54,24 @@ class CommandHandler {
         const authorId = getSenderId(msg);
         const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank' ];
         const isKnown = knownCommands.includes(command);
+        if (isKnown && command !== '/rank') {
+            try {
+                const authorPhone = await this.getFromNumber(msg);
+                await prisma.commandLog.create({
+                    data: {
+                        command,
+                        args: args?.length ? JSON.stringify(args) : null,
+                        chatId: chat?.id?._serialized || null,
+                        chatName: chat?.name || null,
+                        authorId: authorId || null,
+                        phone: authorPhone || null,
+                        messageId: msg.id?._serialized || msg.id?.id || null
+                    }
+                });
+            } catch (err) {
+                console.warn('Falha ao registrar comando:', err?.message || err);
+            }
+        }
 
         if (command === '/ban') {
             return this.handleBan(msg, chat);
@@ -230,6 +248,67 @@ class CommandHandler {
             : raw === 'semanal' || raw === 'weekly' ? 'week'
                 : raw === 'mensal' || raw === 'monthly' ? 'month'
                     : null;
+        const now = new Date();
+
+        const attributeKey = mode === 'day'
+            ? 'diario'
+            : mode === 'month'
+                ? 'mensal'
+                : mode === 'week'
+                    ? 'semanal'
+                    : 'sem_atributo';
+
+        if (mode === 'month' && now.getDate() < 25) {
+            await msg.reply('❌ O /rank mensal só pode ser usado depois do dia 25.');
+            return;
+        }
+
+        if (mode === 'day' && now.getHours() < 19) {
+            await msg.reply('❌ O /rank diario só pode ser usado depois das 19h.');
+            return;
+        }
+
+        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo']);
+        if (rateLimitedAttributes.has(attributeKey)) {
+            const windowStart = new Date(now.getTime() - 30 * 60 * 1000);
+
+            const recentLogs = await prisma.commandLog.findMany({
+                where: {
+                    command: '/rank',
+                    chatId: chat?.id?._serialized || null,
+                    createdAt: { gte: windowStart }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 50
+            });
+
+            const parseArgs = (value) => {
+                if (!value) return [];
+                try {
+                    const parsed = JSON.parse(value);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (_) {
+                    return [];
+                }
+            };
+
+            const toAttributeKey = (argsList) => {
+                const first = String(argsList?.[0] || '').toLowerCase().trim();
+                if (first === 'diario' || first === 'daily') return 'diario';
+                if (first === 'mensal' || first === 'monthly') return 'mensal';
+                if (first === 'semanal' || first === 'weekly') return 'semanal';
+                return 'sem_atributo';
+            };
+
+            const lastSame = recentLogs.find((log) => toAttributeKey(parseArgs(log.args)) === attributeKey);
+            if (lastSame?.createdAt) {
+                const nextAllowed = new Date(new Date(lastSame.createdAt).getTime() + 30 * 60 * 1000);
+                const hh = String(nextAllowed.getHours()).padStart(2, '0');
+                const mm = String(nextAllowed.getMinutes()).padStart(2, '0');
+                await msg.reply(`⏳ O /rank ${attributeKey.replace('_', ' ')} só pode ser usado a cada 30 minutos. Tente novamente às ${hh}:${mm}.`);
+                return;
+            }
+        }
 
         let periodStart = null;
         if (mode === 'day') {
@@ -260,6 +339,24 @@ class CommandHandler {
         const where = mode
             ? { ...whereBase, periodType: mode, periodStart }
             : whereBase;
+
+        try {
+            const authorId = getSenderId(msg);
+            const authorPhone = await this.getFromNumber(msg);
+            await prisma.commandLog.create({
+                data: {
+                    command: '/rank',
+                    args: args?.length ? JSON.stringify(args) : null,
+                    chatId: chat?.id?._serialized || null,
+                    chatName: chat?.name || null,
+                    authorId: authorId || null,
+                    phone: authorPhone || null,
+                    messageId: msg.id?._serialized || msg.id?.id || null
+                }
+            });
+        } catch (err) {
+            console.warn('Falha ao registrar /rank:', err?.message || err);
+        }
 
         const [topMessages, topCommands] = await Promise.all([
             statsSource.findMany({
