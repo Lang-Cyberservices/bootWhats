@@ -1,6 +1,5 @@
 const { getSenderId } = require('./messageUtils');
 
-const DEFAULT_SYSTEM_PROMPT = `Você é Diogenes, um assistente perspicaz e direto que responde em português brasileiro. Recebe mensagens de grupos do WhatsApp, entende contexto curto e responde com clareza e humor moderado. Evite dar conselhos médicos, jurídicos ou financeiros, e mantenha a conversa leve.`;
 
 class LlamaResponder {
     constructor({ auditLogger } = {}) {
@@ -25,10 +24,7 @@ class LlamaResponder {
         }
 
         this.apiKey = (process.env.LLAMA_API_KEY || '').trim() || null;
-        this.systemPrompt = (process.env.LLAMA_SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT).trim();
 
-        this.maxTokens = this.parsePositiveInt(process.env.LLAMA_MAX_TOKENS, 512);
-        this.temperature = this.parseNumber(process.env.LLAMA_TEMPERATURE, 0.7);
         this.requestTimeoutMs = this.parsePositiveInt(process.env.LLAMA_REQUEST_TIMEOUT_MS, 120_000);
         this.allowCommands = (process.env.LLAMA_HANDLE_COMMANDS || 'false').toLowerCase() === 'true';
         this.model = (process.env.LLAMA_MODEL || 'diogenes').trim();
@@ -191,12 +187,8 @@ class LlamaResponder {
         const userMessage = lines.filter(Boolean).join('\n\n');
         const payload = {
             model: this.model,
-            messages: [
-                { role: 'system', content: this.systemPrompt },
-                { role: 'user', content: userMessage }
-            ],
-            temperature: this.temperature,
-            max_tokens: this.maxTokens
+            prompt: userMessage,
+            stream: false
         };
 
         const headers = {
