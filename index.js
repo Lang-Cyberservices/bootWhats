@@ -12,6 +12,7 @@ const { handleGroupJoin } = require('./services/WelcomeService');
 const { connectDatabase } = require('./services/database');
 const StatsCounter = require('./services/StatsCounter');
 const { getSenderId } = require('./services/messageUtils');
+const LlamaResponder = require('./services/LlamaResponder');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
@@ -25,6 +26,7 @@ const oracleService = new OracleService(auditLogger);
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const commandHandler = new CommandHandler(auditLogger, oracleService);
 let statsCounter;
+const llamaResponder = new LlamaResponder({ auditLogger });
 
 
 
@@ -76,17 +78,23 @@ client.on('qr', (qr) => {
     qrcode.generate(qr, {small: true});
 });
 
-client.on('ready', () => {
+client.on('ready',  async() => {
     console.log('🚀 Monitor de grupos ATIVADO!');
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
     }
+    myNumber = process.env.BOOT_NUMBER
+    const numberId = await client.getNumberId(myNumber);
+    
+    llamaResponder.setBotId(numberId._serialized);
 });
 
 client.on('message', async (msg) => {
     if (typeof msg.from === 'string' && msg.from.endsWith('@newsletter')) {
         return; // Ignora mensagens de canais para evitar bug no ChatFactory
     }
+
+
 
     let chat;
     try {
@@ -127,6 +135,7 @@ client.on('message', async (msg) => {
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);
     await commandHandler.handle(msg, chat);
+    await llamaResponder.handleMessage(msg, chat);
 });
 
 client.on('group_join', async (notification) => {
