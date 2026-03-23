@@ -432,7 +432,7 @@ class CommandHandler {
 
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto.
-_versão: 2.1.0_`;
+_versão: 2.3.1_`;
 
         await msg.reply(text);
     }
