@@ -16,6 +16,7 @@ const LlamaResponder = require('./services/LlamaResponder');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
+const webVersion = (process.env.WWEB_VERSION || '2.3000.1035465378').trim();
 let seenGroupIdsInDev = null;
 
 let model;
@@ -27,6 +28,20 @@ const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const commandHandler = new CommandHandler(auditLogger, oracleService);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
+
+async function startClientWithRetry(attempt = 1) {
+    try {
+        await client.initialize();
+    } catch (err) {
+        const msg = err?.message || err;
+        const delayMs = Math.min(30000, 2000 * attempt);
+        console.error(`❌ Falha ao inicializar o WhatsApp Web (tentativa ${attempt}).`, msg);
+        console.error(`🔁 Tentando novamente em ${Math.round(delayMs / 1000)}s...`);
+        setTimeout(() => {
+            startClientWithRetry(attempt + 1);
+        }, delayMs);
+    }
+}
 
 
 
@@ -63,13 +78,20 @@ async function init() {
 
     // Inicializa o cliente mesmo se o modelo NSFW falhar,
     // assim o bot continua funcionando (apenas sem análise de imagem).
-    client.initialize();
+    await startClientWithRetry();
 }
 
 const client = new Client({
     authStrategy: new LocalAuth(),
+    webVersion,
+    webVersionCache: {
+        type: 'local',
+        path: './.wwebjs_cache',
+        strict: false
+    },
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        headless: true
     }
 });
 commandHandler.setClient(client);
@@ -83,10 +105,17 @@ client.on('ready',  async() => {
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
     }
-    myNumber = process.env.BOOT_NUMBER
+    const myNumber = (process.env.BOOT_NUMBER || '').trim();
+    if (!myNumber) {
+        console.warn('⚠️ BOOT_NUMBER não definido. Ignorando setBotId.');
+        return;
+    }
     const numberId = await client.getNumberId(myNumber);
-    
-    llamaResponder.setBotId(numberId._serialized);
+    if (numberId?._serialized) {
+        llamaResponder.setBotId(numberId._serialized);
+    } else {
+        console.warn('⚠️ Não foi possível resolver o BOOT_NUMBER com getNumberId.');
+    }
 });
 
 client.on('message', async (msg) => {

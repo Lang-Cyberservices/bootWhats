@@ -19,6 +19,8 @@ const MAX_COMMANDS_PER_MINUTE = (() => {
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_COMMANDS_PER_MINUTE;
 })();
 const commandHistoryByUser = new Map(); // key: authorId, value: number[]
+const NEWS_COOLDOWN_MS = 14 * 60_000;
+const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
 
 function isRateLimited(authorId) {
     if (!authorId) return false;
@@ -49,10 +51,11 @@ class CommandHandler {
         const body = msg.body || '';
         if (!body.startsWith('/')) return;
 
-        const [command, ...args] = body.trim().split(/\s+/);
+        const [rawCommand, ...args] = body.trim().split(/\s+/);
+        const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank' ];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -111,6 +114,10 @@ class CommandHandler {
             return this.handleEstatisticas(msg, chat, args);
         }
 
+        if (command === '/noticias' || command === '/news') {
+            return this.handleNoticiasCommand(msg, this.client);
+        }
+
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
     }
 
@@ -118,7 +125,7 @@ class CommandHandler {
         const authorId = getSenderId(msg);
         
 
-        if (!this.isAdmin(msg, chat)) {
+        if (!(await this.isAdmin(msg, chat))) {
             await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
             return;
         }
@@ -168,6 +175,110 @@ class CommandHandler {
         const author = await msg.getContact();
         msg._authorPhone = author.number;
         return msg._authorPhone
+    }
+
+    async fetchGNewsArticles() {
+        const apiKey = String(process.env.GNEWS_API_KEY || '').trim();
+        if (!apiKey) {
+            return { error: 'missing_key' };
+        }
+
+        const endpoint = `https://gnews.io/api/v4/top-headlines?category=general&lang=pt&country=br&max=5&apikey=${encodeURIComponent(apiKey)}`;
+        try {
+            const res = await fetch(endpoint, { method: 'GET' });
+            if (!res.ok) {
+                return { error: 'http_error' };
+            }
+            const data = await res.json();
+            const articles = Array.isArray(data?.articles) ? data.articles : [];
+            return { articles };
+        } catch (err) {
+            return { error: 'network_error' };
+        }
+    }
+
+    sanitizeDescription(text, maxLen = 280) {
+        if (!text) return '';
+        const clean = String(text)
+            .replace(/\s+/g, ' ')
+            .replace(/\u0000/g, '')
+            .trim();
+        if (clean.length <= maxLen) return clean;
+        return `${clean.slice(0, maxLen - 1).trimEnd()}…`;
+    }
+
+    isValidUrl(value) {
+        try {
+            const url = new URL(String(value));
+            return url.protocol === 'http:' || url.protocol === 'https:';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async handleNoticiasCommand(msg, client) {
+        const authorId = getSenderId(msg);
+        if (!authorId) {
+            await msg.reply('❌ Não foi possível identificar o usuário.');
+            return;
+        }
+
+        const now = Date.now();
+        const lastTs = lastNewsRequestByUser.get(authorId);
+        if (lastTs) {
+            const elapsed = now - lastTs;
+            if (elapsed < NEWS_COOLDOWN_MS) {
+                const remainingMs = NEWS_COOLDOWN_MS - elapsed;
+                const remainingMin = Math.ceil(remainingMs / 60_000);
+                await msg.reply(`⏳ Aguarde ${remainingMin} minutos antes de pedir notícias novamente.`);
+                return;
+            }
+        }
+
+        const { articles, error } = await this.fetchGNewsArticles();
+        if (error) {
+            await msg.reply('❌ Não foi possível buscar as notícias no momento.');
+            return;
+        }
+
+        if (!articles || articles.length === 0) {
+            await msg.reply('⚠️ Nenhuma notícia encontrada.');
+            return;
+        }
+
+        lastNewsRequestByUser.set(authorId, now);
+
+        // const firstImage = articles[0]?.image;
+        // if (firstImage && this.isValidUrl(firstImage)) {
+        //     try {
+        //         const media = await MessageMedia.fromUrl(firstImage, { unsafeMime: true });
+        //         if (media) {
+        //             await msg.reply(media);
+        //         }
+        //     } catch (e) {
+        //         // ignora falha ao enviar imagem
+        //     }
+        // }
+
+        const header = '🗞️ Principais notícias do dia';
+        const lines = [header, ''];
+        const max = Math.min(5, articles.length);
+
+        for (let i = 0; i < max; i += 1) {
+            const item = articles[i] || {};
+            const title = String(item.title || 'Sem título').trim();
+            const description = this.sanitizeDescription(item.description, 280);
+            const sourceName = String(item?.source?.name || 'Fonte desconhecida').trim();
+            const url = this.isValidUrl(item.url) ? item.url : '';
+
+            lines.push(`${i + 1}️⃣ ${title}`);
+            if (description) lines.push(`📰 ${description}`);
+            lines.push(`🌐 ${sourceName}`);
+            if (url) lines.push(`🔗 ${url}`);
+            if (i < max - 1) lines.push('');
+        }
+
+        await msg.reply(lines.join('\n'));
     }
 
 
@@ -458,6 +569,9 @@ _versão: 2.1.0_`;
 
 - 📊 */rank*  
   Exibe top 5 mensagens e comandos. Opcional: 'diario', 'semanal' ou 'mensal'.
+
+- 🗞️ */noticias* ou */news*  
+  Mostra até 5 notícias principais do dia.
 
 - ℹ️ */sobre*  
   Mostra um resumo sobre o bot e quem desenvolveu.
