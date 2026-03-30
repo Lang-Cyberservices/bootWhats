@@ -187,12 +187,14 @@ class CommandHandler {
         try {
             const res = await fetch(endpoint, { method: 'GET' });
             if (!res.ok) {
+                console.error(res)
                 return { error: 'http_error' };
             }
             const data = await res.json();
             const articles = Array.isArray(data?.articles) ? data.articles : [];
             return { articles };
         } catch (err) {
+            console.error(err)
             return { error: 'network_error' };
         }
     }
