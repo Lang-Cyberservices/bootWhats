@@ -281,6 +281,12 @@ class CommandHandler {
 
     async handleCheck(msg, chat, args) {
         const chatId = chat?.id?._serialized || null;
+        
+        if (!(await this.isAdmin(msg, chat))) {
+            await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
+            return;
+        }
+        
         if (!chatId) {
             await msg.reply('❌ Não consegui identificar o chat para consultar estatísticas.');
             return;
@@ -420,7 +426,7 @@ class CommandHandler {
             `- Geral: ${totalStats?.messagesCount || 0}`,
             `- Última mensagem: ${lastMessageAt}`,
             '',
-            `🖼️ *Imagens removidas (IMAGE_REMOVED):* ${imagesRemovedCount}`,
+            `🖼️ *Imagens removidas:* ${imagesRemovedCount}`,
             `⚙️ *Comandos usados:* ${commandsCount}`,
             `🏆 *Comando mais usado:* ${topCommand} (${topCommandCount}x)`
         ].join('\n');
@@ -859,7 +865,7 @@ class CommandHandler {
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto, 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
-_versão: 2.5.0_`;
+_versão: 2.5.1_`;
 
         await msg.reply(text);
     }
