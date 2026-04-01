@@ -12,6 +12,7 @@ const fs = require('node:fs/promises');
 
 // Controle simples de flood por usuário (em memória)
 const COMMAND_WINDOW_MS = 60_000;
+const COTACAO_COOLDOWN_MS = 3 * 60 * 1000;
 const DEFAULT_MAX_COMMANDS_PER_MINUTE = 3;
 const MAX_COMMANDS_PER_MINUTE = (() => {
     const raw = process.env.MAX_COMMANDS_PER_MINUTE;
@@ -21,6 +22,40 @@ const MAX_COMMANDS_PER_MINUTE = (() => {
 const commandHistoryByUser = new Map(); // key: authorId, value: number[]
 const NEWS_COOLDOWN_MS = 14 * 60_000;
 const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
+let lastCotacaoRequestAt = 0;
+
+const COTACAO_LABEL_BY_CODE = {
+    USD: 'Dollar',
+    CAD: 'Dollar Canadense',
+    JPY: 'Yen',
+    EUR: 'Euro',
+    GBP: 'Libra',
+    CNY: 'Yuan (Renminbi)',
+    BTC: 'Bitcoin'
+};
+
+const COTACAO_EMOJI_BY_CODE = {
+    USD: '🇺🇸',
+    CAD: '🇨🇦',
+    JPY: '🇯🇵',
+    EUR: '🇪🇺',
+    GBP: '🇬🇧',
+    CNY: '🇨🇳',
+    BTC: '💾'
+};
+
+const COTACAO_ALIASES = {
+    dollar: 'USD',
+    'dollar canadense': 'CAD',
+    yen: 'JPY',
+    euro: 'EUR',
+    libra: 'GBP',
+    yuan: 'CNY',
+    renminbi: 'CNY',
+    bitcoin: 'BTC'
+};
+
+const COTACAO_ALL_CODES = ['USD', 'CAD', 'JPY', 'EUR', 'GBP', 'CNY', 'BTC'];
 
 function isRateLimited(authorId) {
     if (!authorId) return false;
@@ -55,7 +90,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news' ];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -114,11 +149,288 @@ class CommandHandler {
             return this.handleEstatisticas(msg, chat, args);
         }
 
+        if (command === '/cotacao') {
+            return this.handleCotacao(msg, args);
+        }
+
+        if (command === '/check') {
+            return this.handleCheck(msg, chat, args);
+        }
+
         if (command === '/noticias' || command === '/news') {
             return this.handleNoticiasCommand(msg, this.client);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
+    }
+
+    async handleCotacao(msg, args) {
+        const hgKey = String(process.env.HG_KEY || '').trim();
+        if (!hgKey) {
+            console.error('HG_KEY não configurada no ambiente. Serviço /cotacao indisponível.');
+            await msg.reply('❌ O serviço de cotação está fora do ar no momento.');
+            return;
+        }
+
+        const rawParam = String(args?.join(' ') || '').trim().toLowerCase();
+        const selectedCode = rawParam ? COTACAO_ALIASES[rawParam] : null;
+
+        if (rawParam && !selectedCode) {
+            await msg.reply(
+                `❌ Parâmetro inválido para /cotacao.\n\nOpções disponíveis:\n- dollar\n- dollar canadense\n- yen\n- euro\n- libra\n- yuan ou renminbi\n- bitcoin`
+            );
+            return;
+        }
+
+        const now = Date.now();
+        const nextAllowedAt = lastCotacaoRequestAt + COTACAO_COOLDOWN_MS;
+        if (lastCotacaoRequestAt > 0 && now < nextAllowedAt) {
+            const remainingMs = nextAllowedAt - now;
+            const remainingSec = Math.ceil(remainingMs / 1000);
+            const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+            const ss = String(remainingSec % 60).padStart(2, '0');
+            await msg.reply(`⏳ Esse comando foi usado recentemente. Espere ${mm}:${ss} para tentar de novo.`);
+            return;
+        }
+
+        lastCotacaoRequestAt = now;
+
+        try {
+            const response = await fetch(`https://api.hgbrasil.com/finance?fields=currencies&key=${encodeURIComponent(hgKey)}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const payload = await response.json();
+            if (!payload?.valid_key) {
+                console.error('HG API retornou valid_key=false para /cotacao.');
+                await msg.reply('❌ O serviço de cotação está fora do ar no momento.');
+                return;
+            }
+
+            const currencies = payload?.results?.currencies;
+            if (!currencies || typeof currencies !== 'object') {
+                throw new Error('Resposta sem currencies');
+            }
+
+            const formatBuy = (value) => {
+                const num = Number(value);
+                if (!Number.isFinite(num)) return 'indisponível';
+                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+            };
+
+            const formatVariation = (value) => {
+                const num = Number(value);
+                if (!Number.isFinite(num)) return 'n/d';
+                return `${num > 0 ? '+' : ''}${num.toFixed(3)}%`;
+            };
+
+            const codes = selectedCode ? [selectedCode] : COTACAO_ALL_CODES;
+            const lines = codes
+                .filter((code) => currencies[code])
+                .map((code) => {
+                    const item = currencies[code];
+                    const emoji = COTACAO_EMOJI_BY_CODE[code] || '💱';
+                    return `- ${emoji} ${COTACAO_LABEL_BY_CODE[code]}: compra ${formatBuy(item?.buy)} (variação ${formatVariation(item?.variation)})`;
+                });
+
+            if (!lines.length) {
+                await msg.reply('❌ Não consegui obter as cotações agora. Tente novamente em instantes.');
+                return;
+            }
+
+            const title = selectedCode ? `💱 Cotação de ${COTACAO_LABEL_BY_CODE[selectedCode]}` : '💱 Cotações disponíveis';
+            await msg.reply([title, '', ...lines].join('\n'));
+        } catch (err) {
+            console.error('Erro no /cotacao:', err?.message || err);
+            await msg.reply('❌ O serviço de cotação está fora do ar no momento.');
+        }
+    }
+
+    async resolveCheckTarget(msg, chat, args) {
+        const mentionIds = Array.isArray(msg?.mentionedIds) ? msg.mentionedIds.filter(Boolean) : [];
+        if (mentionIds.length > 0) {
+            return String(mentionIds[0]);
+        }
+
+        const raw = String(args?.join(' ') || '');
+        const digits = raw.replace(/\D/g, '');
+        if (digits) {
+            const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+            const normalize = (value) => String(value || '').replace(/\D/g, '');
+            const found = participants.find((p) => {
+                const pid = p?.id?._serialized || p?.id?.user || '';
+                const normalized = normalize(pid);
+                return normalized === digits || normalized.endsWith(digits);
+            });
+            if (found?.id?._serialized) {
+                return found.id._serialized;
+            }
+        }
+
+        if (msg?.hasQuotedMsg) {
+            const quoted = await msg.getQuotedMessage();
+            const quotedAuthorId = getSenderId(quoted);
+            if (quotedAuthorId) {
+                return quotedAuthorId;
+            }
+        }
+
+        return null;
+    }
+
+    async handleCheck(msg, chat, args) {
+        const chatId = chat?.id?._serialized || null;
+        if (!chatId) {
+            await msg.reply('❌ Não consegui identificar o chat para consultar estatísticas.');
+            return;
+        }
+
+        const targetAuthorId = await this.resolveCheckTarget(msg, chat, args);
+        if (!targetAuthorId) {
+            await msg.reply('❓ Use */check @usuario* para eu analisar as estatísticas do membro.');
+            return;
+        }
+
+        const targetPhone = String(targetAuthorId).replace(/\D/g, '');
+        const now = new Date();
+        const dayStart = new Date(now);
+        dayStart.setHours(0, 0, 0, 0);
+        const weekStart = new Date(now);
+        const day = weekStart.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        weekStart.setDate(weekStart.getDate() + diff);
+        weekStart.setHours(0, 0, 0, 0);
+        const monthStart = new Date(now);
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+
+        const userWhere = targetPhone
+            ? { OR: [{ authorId: targetAuthorId }, { phone: targetPhone }] }
+            : { authorId: targetAuthorId };
+
+        const [
+            totalStats,
+            dayBucket,
+            weekBucket,
+            monthBucket,
+            imagesRemovedCount,
+            commandsCount,
+            topCommandGroup
+        ] = await Promise.all([
+            prisma.messageStats.findUnique({
+                where: {
+                    chatId_authorId: {
+                        chatId,
+                        authorId: targetAuthorId
+                    }
+                }
+            }),
+            prisma.messageStatsBucket?.findUnique({
+                where: {
+                    chatId_authorId_periodType_periodStart: {
+                        chatId,
+                        authorId: targetAuthorId,
+                        periodType: 'day',
+                        periodStart: dayStart
+                    }
+                }
+            }),
+            prisma.messageStatsBucket?.findUnique({
+                where: {
+                    chatId_authorId_periodType_periodStart: {
+                        chatId,
+                        authorId: targetAuthorId,
+                        periodType: 'week',
+                        periodStart: weekStart
+                    }
+                }
+            }),
+            prisma.messageStatsBucket?.findUnique({
+                where: {
+                    chatId_authorId_periodType_periodStart: {
+                        chatId,
+                        authorId: targetAuthorId,
+                        periodType: 'month',
+                        periodStart: monthStart
+                    }
+                }
+            }),
+            prisma.log.count({
+                where: {
+                    action: 'IMAGE_REMOVED',
+                    chatId,
+                    ...userWhere
+                }
+            }),
+            prisma.commandLog.count({
+                where: {
+                    chatId,
+                    ...userWhere
+                }
+            }),
+            prisma.commandLog.groupBy({
+                by: ['command'],
+                where: {
+                    chatId,
+                    ...userWhere
+                },
+                _count: {
+                    command: true
+                },
+                orderBy: {
+                    _count: {
+                        command: 'desc'
+                    }
+                },
+                take: 1
+            })
+        ]);
+
+        let mentionContact = null;
+        if (this.client) {
+            try {
+                mentionContact = await this.client.getContactById(targetAuthorId);
+            } catch (_) {}
+        }
+        const label = mentionContact?.number
+            ? `@${mentionContact.number}`
+            : targetPhone
+                ? `@${targetPhone}`
+                : `@${String(targetAuthorId).split('@')[0]}`;
+
+        const topCommand = topCommandGroup?.[0]?.command || '(nenhum)';
+        const topCommandCount = topCommandGroup?.[0]?._count?.command || 0;
+        const lastMessageAt = totalStats?.updatedAt
+            ? new Intl.DateTimeFormat('pt-BR', {
+                dateStyle: 'short',
+                timeStyle: 'medium'
+            }).format(new Date(totalStats.updatedAt))
+            : 'sem registro';
+
+        const text = [
+            `📊 *Check de usuário*`,
+            '',
+            `👤 ${label}`,
+            '',
+            `💬 *Mensagens*`,
+            `- Hoje: ${dayBucket?.messagesCount || 0}`,
+            `- Semana: ${weekBucket?.messagesCount || 0}`,
+            `- Mês: ${monthBucket?.messagesCount || 0}`,
+            `- Geral: ${totalStats?.messagesCount || 0}`,
+            `- Última mensagem: ${lastMessageAt}`,
+            '',
+            `🖼️ *Imagens removidas (IMAGE_REMOVED):* ${imagesRemovedCount}`,
+            `⚙️ *Comandos usados:* ${commandsCount}`,
+            `🏆 *Comando mais usado:* ${topCommand} (${topCommandCount}x)`
+        ].join('\n');
+
+        if (mentionContact) {
+            await chat.sendMessage(text, { mentions: [targetAuthorId] });
+            return;
+        }
+
+        await msg.reply(text);
     }
 
     async handleBan(msg, chat) {
@@ -496,7 +808,8 @@ class CommandHandler {
                 try {
                     const contact = await this.client.getContactById(id);
                     if (contact) {
-                        mentions.push(contact);
+                        const mentionId = contact?.id?._serialized || id;
+                        mentions.push(mentionId);
                         const label = contact?.number ? `@${contact.number}` : `@${id.split('@')[0]}`;
                         labelById.set(id, label);
                     }
@@ -546,7 +859,7 @@ class CommandHandler {
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto, 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
-_versão: 2.4.0_`;
+_versão: 2.5.0_`;
 
         await msg.reply(text);
     }
@@ -575,6 +888,12 @@ _versão: 2.4.0_`;
 
 - 🗞️ */noticias* ou */news*  
   Mostra até 5 notícias principais do dia.
+
+- 💱 */cotacao*  
+  Mostra cotações em BRL. Opções: 'dollar', 'dollar canadense', 'yen', 'euro', 'libra', 'yuan/renminbi' e 'bitcoin'. Sem parâmetro, retorna todas.
+
+- 🕵️ */check*  
+  Mostra estatísticas de um usuário mencionado: mensagens (hoje/semana/mês/geral), imagens removidas e uso de comandos.
 
 - ℹ️ */sobre*  
   Mostra um resumo sobre o bot e quem desenvolveu.
