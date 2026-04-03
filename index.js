@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const nsfw = require('nsfwjs');
@@ -17,7 +18,11 @@ const LlamaResponder = require('./services/LlamaResponder');
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
 const webVersion = (process.env.WWEB_VERSION || '2.3000.1035465378').trim();
+const ingestPort = Number(process.env.HTTP_INGEST_PORT) || 5000;
+const ingestKey = (process.env.HTTP_INGEST_KEY || '').trim();
+const ingestGroupId = (process.env.HTTP_INGEST_GROUP_ID || '').trim();
 let seenGroupIdsInDev = null;
+let isClientReady = false;
 
 let model;
 let imageAnalyzer;
@@ -95,12 +100,14 @@ const client = new Client({
     }
 });
 commandHandler.setClient(client);
+startIngestServer();
 
 client.on('qr', (qr) => {
     qrcode.generate(qr, {small: true});
 });
 
 client.on('ready',  async() => {
+    isClientReady = true;
     console.log('🚀 Monitor de grupos ATIVADO!');
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
@@ -116,6 +123,10 @@ client.on('ready',  async() => {
     } else {
         console.warn('⚠️ Não foi possível resolver o BOOT_NUMBER com getNumberId.');
     }
+});
+
+client.on('disconnected', () => {
+    isClientReady = false;
 });
 
 client.on('message', async (msg) => {
@@ -189,5 +200,60 @@ client.on('group_join', async (notification) => {
 
     await handleGroupJoin(notification, chat, { auditLogger });
 });
+
+function respondAsClosedPort(res) {
+    return res.status(404).type('text/plain').send('');
+}
+
+function isValidIngestPayload(payload) {
+    if (!payload || Array.isArray(payload) || typeof payload !== 'object') return false;
+    const keys = Object.keys(payload);
+    if (keys.length !== 2 || !keys.includes('message') || !keys.includes('key')) return false;
+    if (typeof payload.message !== 'string' || !payload.message.trim()) return false;
+    if (typeof payload.key !== 'string') return false;
+    return true;
+}
+
+function startIngestServer() {
+    const app = express();
+    app.disable('x-powered-by');
+    app.use(express.json({ strict: true, limit: '8kb', type: 'application/json' }));
+
+    app.post('/', async (req, res) => {
+        if (!ingestKey || !ingestGroupId) {
+            return respondAsClosedPort(res);
+        }
+
+        if (!isValidIngestPayload(req.body) || req.body.key !== ingestKey) {
+            return respondAsClosedPort(res);
+        }
+
+        if (!isClientReady) {
+            return res.status(503).json({ error: 'client_not_ready' });
+        }
+
+        try {
+
+            msg= "Esta é uma mensagem teste enviada pela API: " + req.body.message.trim();
+            await client.sendMessage(ingestGroupId, msg);
+            return res.status(202).json({ ok: true });
+        } catch (e) {
+            console.error('Erro ao enviar mensagem da API HTTP:', e);
+            return res.status(500).json({ error: 'send_failed' });
+        }
+    });
+
+    app.use((err, req, res, next) => {
+        return respondAsClosedPort(res);
+    });
+
+    app.use((req, res) => {
+        return respondAsClosedPort(res);
+    });
+
+    app.listen(ingestPort, () => {
+        console.log(`🌐 API HTTP ativa na porta ${ingestPort}`);
+    });
+}
 
 init(); // Inicia o carregamento da IA e depois o bot
