@@ -136,3 +136,36 @@ model WelcomeConfig {
 
   @@map("welcome_configs")
 }
+
+model BookTopWeek {
+  id        Int      @id @default(autoincrement())
+  week      DateTime @db.Date
+  book      String   @db.VarChar(255)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([week, book])
+  @@map("books_top_week")
+}
+
+model BooksDownload {
+  id        Int      @id @default(autoincrement())
+  font      String   @db.VarChar(255)
+  link      String   @db.VarChar(500)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("books_download")
+}
+
+model BookRecomendation {
+  id          Int      @id @default(autoincrement())
+  book        String   @db.VarChar(255)
+  autoctor    String   @db.VarChar(255)
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("book_recomendation")
+}

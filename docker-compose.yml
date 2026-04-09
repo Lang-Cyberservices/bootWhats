@@ -2,6 +2,7 @@ services:
   mariadb:
     image: mariadb:12.2
     container_name: mariadb
+    privileged: true
 
     environment:
       MARIADB_ROOT_PASSWORD: 123root4

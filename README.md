@@ -10,7 +10,7 @@ Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos a
 5. Inicie com `node index.js` e escaneie o QR.
 
 ## Requisitos
-- Node.js **20 LTS** (recomendado para compatibilidade com `@tensorflow/tfjs-node`).
+- Node.js **22 LTS** (recomendado para compatibilidade com `@tensorflow/tfjs-node`).
 - MariaDB 10+ (ou via Docker).
 - Python 3 (opcional, usado para LAION no score de imagens).
 - Dependências nativas para `sharp` e `canvas` (instaladas via npm, geralmente já resolvem).

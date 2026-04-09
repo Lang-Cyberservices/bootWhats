@@ -90,7 +90,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check' ];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -159,6 +159,10 @@ class CommandHandler {
 
         if (command === '/noticias' || command === '/news') {
             return this.handleNoticiasCommand(msg, this.client);
+        }
+
+        if (command === '/books' || command === '/livros') {
+            return this.handleBooks(msg);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -536,6 +540,180 @@ class CommandHandler {
         }
     }
 
+    getLastMondayDate(baseDate = new Date()) {
+        const date = new Date(baseDate);
+        date.setHours(0, 0, 0, 0);
+        const day = date.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        date.setDate(date.getDate() + diff);
+        return date;
+    }
+
+    formatDateToIso(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    decodeHtmlEntities(text) {
+        return String(text || '')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#34;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&apos;/gi, "'")
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+            .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
+    }
+
+    normalizeText(text) {
+        return String(text || '')
+            .replace(/\u00a0/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    htmlToCleanLines(html) {
+        const text = this.decodeHtmlEntities(
+            String(html || '')
+                .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+                .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+                .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/(p|div|section|article|li|h1|h2|h3|h4|h5|h6|tr|td)>/gi, '\n')
+                .replace(/<[^>]+>/g, '\n')
+        );
+
+        return text
+            .split('\n')
+            .map((line) => this.normalizeText(line))
+            .filter(Boolean);
+    }
+
+    extractWeeklyBooksFromPublishNews(html, limit = Number.POSITIVE_INFINITY) {
+        const matches = String(html || '').match(/<div[^>]*class=["'][^"']*pn-ranking-livro-nome[^"']*["'][^>]*>[\s\S]*?<\/div>/gi) || [];
+        const books = [];
+
+        for (const match of matches) {
+            const normalizedTitle = this.normalizeText(
+                this.decodeHtmlEntities(String(match).replace(/<[^>]+>/g, ' '))
+            );
+            if (!normalizedTitle) continue;
+            if (books.includes(normalizedTitle)) continue;
+
+            books.push(normalizedTitle);
+            if (books.length >= limit) break;
+        }
+
+        return books;
+    }
+
+    async fetchWeeklyBooksFromPublishNews(weekDate) {
+        const weekIso = this.formatDateToIso(weekDate);
+        const url = `https://www.publishnews.com.br/ranking-nielsen/semanal/0/${weekIso}/0/0`;
+        const response = await fetch(url, {
+            headers: {
+                'user-agent': 'Mozilla/5.0 BootWhats/1.0'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} ao buscar ranking semanal`);
+        }
+
+        const html = await response.text();
+        const books = this.extractWeeklyBooksFromPublishNews(html, 3);
+        if (!books.length) {
+            throw new Error('Nenhum livro foi encontrado no ranking semanal');
+        }
+
+        return books;
+    }
+
+    async ensureWeeklyBooks(weekDate) {
+        const existing = await prisma.bookTopWeek.findMany({
+            where: { week: weekDate },
+            orderBy: { id: 'asc' }
+        });
+
+        if (existing.length > 0) {
+            return existing;
+        }
+
+        const books = await this.fetchWeeklyBooksFromPublishNews(weekDate);
+        await prisma.bookTopWeek.createMany({
+            data: books.map((book) => ({
+                week: weekDate,
+                book
+            })),
+            skipDuplicates: true
+        });
+
+        return prisma.bookTopWeek.findMany({
+            where: { week: weekDate },
+            orderBy: { id: 'asc' }
+        });
+    }
+
+    async handleBooks(msg) {
+        if (!prisma.bookTopWeek || !prisma.booksDownload || !prisma.bookRecomendation) {
+            await msg.reply('❌ O módulo de livros ainda não está disponível. Rode as migrations e regenere o Prisma Client.');
+            return;
+        }
+
+        try {
+            const lastMonday = this.getLastMondayDate();
+            const weeklyBooks = await this.ensureWeeklyBooks(lastMonday);
+
+            const [downloads, recomendation] = await Promise.all([
+                prisma.booksDownload.findMany({
+                    where: { active: true },
+                    orderBy: { id: 'asc' }
+                }),
+                prisma.bookRecomendation.findFirst({
+                    orderBy: { createdAt: 'desc' }
+                })
+            ]);
+
+            const lines = [
+                `📚 *Livros da semana*`,
+                `🗓️ Semana de ${new Intl.DateTimeFormat('pt-BR').format(lastMonday)}`,
+                '',
+                `📖 *Biblioteca virtual*`
+            ];
+
+            if (downloads.length > 0) {
+                lines.push(...downloads.map((item) => `- ${this.normalizeText(item.font)}: ${this.normalizeText(item.link)}`));
+            } else {
+                lines.push('- Nenhuma fonte ativa cadastrada.');
+            }
+
+            lines.push('', '🏆 *Top livros da semana*');
+            if (weeklyBooks.length > 0) {
+                lines.push(...weeklyBooks.map((item, index) => `${index + 1}. ${this.normalizeText(item.book)}`));
+            } else {
+                lines.push('- Nenhum livro encontrado para a semana.');
+            }
+
+            lines.push('', '🧠 *Recomendação do Dio*');
+            if (recomendation) {
+                lines.push(`- ${this.normalizeText(recomendation.book)} | ${this.normalizeText(recomendation.autoctor)}`);
+                lines.push(this.normalizeText(recomendation.description));
+            } else {
+                lines.push('- Nenhuma recomendação cadastrada.');
+            }
+
+            await msg.reply(lines.join('\n'));
+        } catch (err) {
+            console.error('Erro no /books:', err?.message || err);
+            await msg.reply('❌ Não consegui montar a lista de livros agora.');
+        }
+    }
+
     async handleNoticiasCommand(msg, client) {
         const authorId = getSenderId(msg);
         if (!authorId) {
@@ -900,6 +1078,9 @@ _versão: 2.5.1_`;
 
 - 🕵️ */check*  
   Mostra estatísticas de um usuário mencionado: mensagens (hoje/semana/mês/geral), imagens removidas e uso de comandos.
+
+- 📚 */books* ou */livros*  
+  Exibe links ativos da biblioteca virtual, o top de livros da última segunda-feira e a recomendação mais recente do Dio.
 
 - ℹ️ */sobre*  
   Mostra um resumo sobre o bot e quem desenvolveu.

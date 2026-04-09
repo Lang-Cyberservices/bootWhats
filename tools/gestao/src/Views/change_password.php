@@ -21,6 +21,7 @@
         <div class="navbar-nav">
             <a class="nav-link" href="/?route=jokes">Piadas</a>
             <a class="nav-link" href="/?route=admins">Admins</a>
+            <a class="nav-link" href="/?route=books">Livros</a>
             <a class="nav-link" href="/?route=welcome">Boas vindas</a>
             <a class="nav-link" href="/?route=system">Sistema</a>
             <a class="nav-link active" aria-current="page" href="/?route=change-password">Trocar senha</a>
