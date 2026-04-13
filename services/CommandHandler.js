@@ -985,16 +985,13 @@ class CommandHandler {
             ...topCommands.map((s) => s.authorId)
         ]);
 
-        const mentions = [];
         const labelById = new Map();
         if (this.client) {
             for (const id of uniqueIds) {
                 try {
                     const contact = await this.client.getContactById(id);
                     if (contact) {
-                        const mentionId = contact?.id?._serialized || id;
-                        mentions.push(mentionId);
-                        const label = contact?.number ? `@${contact.number}` : `@${id.split('@')[0]}`;
+                        const label = contact?.pushname || contact?.name || contact?.number || id.split('@')[0];
                         labelById.set(id, label);
                     }
                 } catch (e) {
@@ -1006,7 +1003,7 @@ class CommandHandler {
         const fmt = (list, countKey) => {
             if (!list.length) return ['(sem dados)'];
             return list.map((s, i) => {
-                const label = labelById.get(s.authorId) || (s.phone ? `@${s.phone}` : `@${String(s.authorId).split('@')[0]}`);
+                const label = labelById.get(s.authorId) || s.phone || String(s.authorId).split('@')[0];
                 return `${i + 1}. ${label} — ${s[countKey] || 0}`;
             });
         };
@@ -1029,11 +1026,7 @@ class CommandHandler {
             ...fmt(topCommands, 'commandsCount')
         ].join('\n');
 
-        if (mentions.length > 0) {
-            await chat.sendMessage(text, { mentions });
-        } else {
-            await msg.reply(text);
-        }
+        await msg.reply(text);
     }
 
     async handleSobre(msg, _chat) {
