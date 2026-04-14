@@ -95,7 +95,13 @@ const client = new Client({
         strict: false
     },
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--no-zygote',
+        '--disable-gpu'
+    ],
         headless: true
     }
 });
