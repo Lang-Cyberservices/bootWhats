@@ -90,7 +90,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
+        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -123,7 +123,7 @@ class CommandHandler {
             return this.handleSobre(msg, chat);
         }
 
-        if (command === '/ajuda') {
+        if (command === '/ajuda' || command === '/help') {
             return this.handleAjuda(msg, chat);
         }
 
@@ -252,6 +252,38 @@ class CommandHandler {
     }
 
     async resolveCheckTarget(msg, chat, args) {
+        const mentionIds = Array.isArray(msg?.mentionedIds) ? msg.mentionedIds.filter(Boolean) : [];
+        if (mentionIds.length > 0) {
+            return String(mentionIds[0]);
+        }
+
+        const raw = String(args?.join(' ') || '');
+        const digits = raw.replace(/\D/g, '');
+        if (digits) {
+            const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+            const normalize = (value) => String(value || '').replace(/\D/g, '');
+            const found = participants.find((p) => {
+                const pid = p?.id?._serialized || p?.id?.user || '';
+                const normalized = normalize(pid);
+                return normalized === digits || normalized.endsWith(digits);
+            });
+            if (found?.id?._serialized) {
+                return found.id._serialized;
+            }
+        }
+
+        if (msg?.hasQuotedMsg) {
+            const quoted = await msg.getQuotedMessage();
+            const quotedAuthorId = getSenderId(quoted);
+            if (quotedAuthorId) {
+                return quotedAuthorId;
+            }
+        }
+
+        return null;
+    }
+
+    async resolveBanTarget(msg, chat, args) {
         const mentionIds = Array.isArray(msg?.mentionedIds) ? msg.mentionedIds.filter(Boolean) : [];
         if (mentionIds.length > 0) {
             return String(mentionIds[0]);
@@ -445,24 +477,30 @@ class CommandHandler {
 
     async handleBan(msg, chat) {
         const authorId = getSenderId(msg);
-        
+        const [, ...args] = String(msg.body || '').trim().split(/\s+/);
 
         if (!(await this.isAdmin(msg, chat))) {
             await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
             return;
         }
 
-        if (!msg.hasQuotedMsg) {
-            await msg.reply('❓ Para purificar este antro da tolice, aponta tua lanterna para a face do imundo — responde à mensagem daquele que não merece o sol — e brada o decreto: /ban');
+        const userToBan = await this.resolveBanTarget(msg, chat, args);
+        if (!userToBan) {
+            await msg.reply('❓ Para purificar este antro da tolice, responde à mensagem do alvo ou usa */ban @usuario* para indicar quem deve sair.');
             return;
         }
 
-        const quotedMsg = await msg.getQuotedMessage();
-        const userToBan = quotedMsg.author;
-
         try {
+            const banStickerPath = path.join(__dirname, '..', 'storage', 'ban.webp');
+            const stickerBuffer = await fs.readFile(banStickerPath);
+            const stickerMedia = new MessageMedia('image/webp', stickerBuffer.toString('base64'), 'ban.webp');
+
+            await chat.sendMessage(stickerMedia, {
+                sendMediaAsSticker: true,
+                stickerName: 'BootWhats',
+                stickerAuthor: 'DevTeam'
+            });
             await chat.removeParticipants([userToBan]);
-            await msg.reply('Finalmente, um pouco de silêncio. O estorvo foi removido e o ar parece mais limpo. Agora, saia do meu sol para que eu possa contemplar o nada em paz.');
             const fromNumber = await this.getFromNumber(msg);
             await this.auditLogger?.log('BAN_EXECUTED', {
                 chatId: chat?.id?._serialized,
@@ -1036,6 +1074,8 @@ class CommandHandler {
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto, 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
+Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
+pix@diogenes.ia.br
 _versão: 2.5.1_`;
 
         await msg.reply(text);
@@ -1046,7 +1086,7 @@ _versão: 2.5.1_`;
 `📖 *Lista de comandos disponíveis*
 
 - 🔨 */ban*  
-  Apenas administradores. Responda a uma mensagem com /ban para remover o usuário do grupo.
+  Apenas administradores. Use respondendo uma mensagem ou com */ban @usuario* para remover o usuário do grupo.
 
 - 🚫 */proibir*  
   Apenas administradores. Responda uma imagem ou figurinha com /proibir para bloquear o conteúdo.
@@ -1078,7 +1118,7 @@ _versão: 2.5.1_`;
 - ℹ️ */sobre*  
   Mostra um resumo sobre o bot e quem desenvolveu.
 
-- ❓ */ajuda*  
+- ❓ */ajuda ou /help*  
   Exibe esta lista de comandos.`;
 
         await msg.reply(text);

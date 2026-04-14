@@ -4,7 +4,7 @@ node_modules
 /.wwebjs_auth
 /.wwebjs_cache 
 /generated/prisma
-/storage
+/storage/deleted-media
 /run
 /node_modules
 /.idea
