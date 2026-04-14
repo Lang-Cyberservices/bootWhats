@@ -9,6 +9,7 @@ const { promisify } = require('node:util');
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const { setTimeout: sleep } = require('node:timers/promises');
 
 // Controle simples de flood por usuário (em memória)
 const COMMAND_WINDOW_MS = 60_000;
@@ -90,7 +91,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -113,6 +114,10 @@ class CommandHandler {
 
         if (command === '/ban') {
             return this.handleBan(msg, chat);
+        }
+
+        if (command === '/adm') {
+            return this.handleAdm(msg, chat);
         }
 
         if (command === '/oraculo') {
@@ -500,6 +505,11 @@ class CommandHandler {
                 stickerName: 'BootWhats',
                 stickerAuthor: 'DevTeam'
             });
+
+            // Da um respiro para o WhatsApp propagar a figurinha no grupo
+            // antes da remocao do participante.
+            await sleep(500);
+
             await chat.removeParticipants([userToBan]);
             const fromNumber = await this.getFromNumber(msg);
             await this.auditLogger?.log('BAN_EXECUTED', {
@@ -514,6 +524,36 @@ class CommandHandler {
             console.error(err);
             await msg.reply('❌ A lanterna falhou em encontrar o caminho da saída. O estorvo permanece entre nós, como uma mancha que não sai com água. Verificai se tendes o poder para tal ato ou se o destino decidiu que ainda deveis suportar a presença deste bípede sem penas.');
         }
+    }
+
+    async handleAdm(msg, chat) {
+        const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+        if (!participants.length) {
+            await msg.reply('❌ Este comando so funciona em grupos onde eu consiga ver os participantes.');
+            return;
+        }
+
+        const clientId = this.client?.info?.wid?._serialized || null;
+        const adminIds = participants
+            .filter((participant) => participant?.isAdmin || participant?.isSuperAdmin)
+            .map((participant) => participant?.id?._serialized)
+            .filter((id) => id && id !== clientId)
+            .filter(Boolean);
+
+        if (!adminIds.length) {
+            await msg.reply('❌ Nao encontrei administradores neste grupo.');
+            return;
+        }
+
+        const mentions = adminIds.map((id) => `@${String(id).split('@')[0]}`);
+        const text = [
+            '🚨 *ATENCAO* 🚨',
+            '',
+            'Administradores do grupo, sua presenca foi solicitada.',
+            mentions.join(' ')
+        ].join('\n');
+
+        await msg.reply(text, undefined, { mentions: adminIds });
     }
 
     async isAdmin(msg, chat) {
@@ -1076,7 +1116,7 @@ Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
 Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
 pix@diogenes.ia.br
-_versão: 2.5.1_`;
+_versão: 2.7.1_`;
 
         await msg.reply(text);
     }
@@ -1087,6 +1127,9 @@ _versão: 2.5.1_`;
 
 - 🔨 */ban*  
   Apenas administradores. Use respondendo uma mensagem ou com */ban @usuario* para remover o usuário do grupo.
+
+- 🚨 */adm*  
+  Marca todos os administradores do grupo, o uso indevido desse comando é passivel de punições.
 
 - 🚫 */proibir*  
   Apenas administradores. Responda uma imagem ou figurinha com /proibir para bloquear o conteúdo.
