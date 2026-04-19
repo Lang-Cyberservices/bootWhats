@@ -91,7 +91,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -168,6 +168,10 @@ class CommandHandler {
 
         if (command === '/books' || command === '/livros') {
             return this.handleBooks(msg);
+        }
+
+        if (command === '/pergunta' || command === '/bola8' || command === '/8ball') {
+            return this.handlePergunta(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -897,7 +901,8 @@ class CommandHandler {
             const evidencePath = await saveEvidence(bufferOriginal, {
                 messageId: quotedMsg.id?._serialized || quotedMsg.id?.id,
                 mimetype: media?.mimetype,
-                evidenceDir: process.env.NSFW_EVIDENCE_DIR
+                evidenceDir: process.env.NSFW_EVIDENCE_DIR,
+                md5
             });
             await quotedMsg.delete(true);
             const authorPhone = await this.getFromNumber(msg);
@@ -1116,7 +1121,7 @@ Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
 Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
 pix@diogenes.ia.br
-_versão: 2.7.1_`;
+_versão: 2.8.8_`;
 
         await msg.reply(text);
     }
@@ -1139,6 +1144,9 @@ _versão: 2.7.1_`;
 
 - 😂 */piada*  
   Envia uma piada aleatória do bot.
+
+- 🎱 */pergunta*, */bola8* ou */8ball*  
+  Responde sua pergunta com os poderes  da bola 8.
 
 - 🖼️ */sticker*  
   Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
@@ -1165,6 +1173,31 @@ _versão: 2.7.1_`;
   Exibe esta lista de comandos.`;
 
         await msg.reply(text);
+    }
+
+    async handlePergunta(msg, chat, args) {
+        const question = String(args?.join(' ') || '').trim();
+
+        if (!question) {
+            await msg.reply('❓ Você precisa fazer uma pergunta depois do comando.');
+            return;
+        }
+
+        const draw = Math.floor(Math.random() * 20) + 1;
+        const imageName = String(draw).padStart(2, '0') + '.png';
+        const imagePath = path.join(__dirname, '..', 'storage', 'bola8', imageName);
+
+        try {
+            const imageBuffer = await fs.readFile(imagePath);
+            const media = new MessageMedia('image/png', imageBuffer.toString('base64'), imageName);
+
+            await chat.sendMessage(media, {
+                quotedMessageId: msg.id?._serialized
+            });
+        } catch (err) {
+            console.error('Erro no /pergunta:', err);
+            await msg.reply('❌ Não consegui consultar a bola 8 agora.');
+        }
     }
 
     async handleSticker(msg, chat) {

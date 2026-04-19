@@ -8,13 +8,13 @@ async function saveEvidence(buffer, opts = {}) {
 
     const md5 = typeof opts.md5 === 'string' ? opts.md5.trim() : '';
     const safeMd5 = md5.replace(/[^a-fA-F0-9]/g, '');
+    const extension = getExtension(opts.mimetype);
     let fileName;
     if (safeMd5) {
-        fileName = safeMd5;
+        fileName = `${safeMd5}.${extension}`;
     } else {
         const rawMessageId = opts.messageId || `${Date.now()}`;
         const safeMessageId = String(rawMessageId).replace(/[^a-zA-Z0-9._-]/g, '_');
-        const extension = getExtension(opts.mimetype);
         fileName = `${Date.now()}_${safeMessageId}.${extension}`;
     }
     const targetPath = path.resolve(evidenceDir, fileName);
