@@ -121,6 +121,11 @@ class CommandHandler {
         const authorId = getSenderId(msg);
         const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/d' ];
         const isKnown = knownCommands.includes(canonicalCommand);
+        if (isKnown && isRateLimited(authorId)) {
+            await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
+            return;
+        }
+
         if (isKnown && command !== '/rank') {
             try {
                 const authorPhone = await this.getFromNumber(msg);
