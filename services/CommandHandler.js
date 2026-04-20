@@ -113,7 +113,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -146,7 +146,7 @@ class CommandHandler {
             return this.handleOraculo(msg, chat);
         }
 
-        if (command === '/horoscopo') {
+        if (command === '/horoscopo' || command === '/horóscopo' || command === '/signo') {
             return this.handleHoroscopo(msg, chat, args);
         }
 
@@ -1395,8 +1395,8 @@ _versão: 2.8.8_`;
 - 🔮 */oraculo*  
   Consulta o oráculo místico e retorna sua previsão da semana.
 
-- ✨ */horoscopo*  
-  Sem parâmetro, usa seu signo cadastrado e retorna o horóscopo do dia. Com */horoscopo [signo]* em português, cadastra/atualiza seu signo e retorna a previsão do dia.
+- ✨ */horoscopo*, */horóscopo* ou */signo*  
+  Sem parâmetro, usa seu signo cadastrado e retorna o horóscopo do dia. Com o comando seguido de *[signo]* em português, cadastra/atualiza seu signo e retorna a previsão do dia.
 
 - 😂 */piada*  
   Envia uma piada aleatória do bot.
