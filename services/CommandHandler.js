@@ -57,6 +57,20 @@ const COTACAO_ALIASES = {
 };
 
 const COTACAO_ALL_CODES = ['USD', 'CAD', 'JPY', 'EUR', 'GBP', 'CNY', 'BTC'];
+const HOROSCOPE_SIGN_MAP = {
+    aries: { slug: 'aries', label: 'Áries', emoji: '♈' },
+    touro: { slug: 'touro', label: 'Touro', emoji: '♉' },
+    gemeos: { slug: 'gemeos', label: 'Gêmeos', emoji: '♊' },
+    cancer: { slug: 'cancer', label: 'Câncer', emoji: '♋' },
+    leao: { slug: 'leao', label: 'Leão', emoji: '♌' },
+    virgem: { slug: 'virgem', label: 'Virgem', emoji: '♍' },
+    libra: { slug: 'libra', label: 'Libra', emoji: '♎' },
+    escorpiao: { slug: 'escorpiao', label: 'Escorpião', emoji: '♏' },
+    sagitario: { slug: 'sagitario', label: 'Sagitário', emoji: '♐' },
+    capricornio: { slug: 'capricornio', label: 'Capricórnio', emoji: '♑' },
+    aquario: { slug: 'aquario', label: 'Aquário', emoji: '♒' },
+    peixes: { slug: 'peixes', label: 'Peixes', emoji: '♓' }
+};
 
 function isRateLimited(authorId) {
     if (!authorId) return false;
@@ -70,6 +84,14 @@ function isRateLimited(authorId) {
     commandHistoryByUser.set(authorId, recent);
 
     return recent.length > MAX_COMMANDS_PER_MINUTE;
+}
+
+function normalizeCommandText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
 }
 
 class CommandHandler {
@@ -91,7 +113,7 @@ class CommandHandler {
         const command = String(rawCommand || '').toLowerCase();
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo' ];
         const isKnown = knownCommands.includes(command);
         if (isKnown && command !== '/rank') {
             try {
@@ -122,6 +144,10 @@ class CommandHandler {
 
         if (command === '/oraculo') {
             return this.handleOraculo(msg, chat);
+        }
+
+        if (command === '/horoscopo') {
+            return this.handleHoroscopo(msg, chat, args);
         }
 
         if (command === '/sobre') {
@@ -934,6 +960,233 @@ class CommandHandler {
         await this.oracleService.getWeeklyPrediction(msg, chat);
     }
 
+    getHoroscopeDateInfo() {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        const parts = formatter.formatToParts(new Date());
+        const year = parts.find((part) => part.type === 'year')?.value;
+        const month = parts.find((part) => part.type === 'month')?.value;
+        const day = parts.find((part) => part.type === 'day')?.value;
+        const iso = `${year}-${month}-${day}`;
+        const display = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            dateStyle: 'full'
+        }).format(new Date());
+
+        return { iso, display };
+    }
+
+    resolveHoroscopeSign(rawValue) {
+        const key = normalizeCommandText(rawValue).replace(/\s+/g, '');
+        return HOROSCOPE_SIGN_MAP[key] || null;
+    }
+
+    listHoroscopeSigns() {
+        return Object.values(HOROSCOPE_SIGN_MAP).map((item) => item.label).join(', ');
+    }
+
+    getHoroscopeSignInfo(signSlug) {
+        return Object.values(HOROSCOPE_SIGN_MAP).find((item) => item.slug === signSlug) || null;
+    }
+
+    async getUserHoroscopeRecord(userId) {
+        const rows = await prisma.$queryRaw`
+            SELECT id, userId, phone, sign
+            FROM user_horoscopes
+            WHERE userId = ${userId}
+            LIMIT 1
+        `;
+        return rows?.[0] || null;
+    }
+
+    async saveUserHoroscopeRecord({ userId, phone, sign }) {
+        await prisma.$executeRaw`
+            INSERT INTO user_horoscopes (userId, phone, sign, createdAt, updatedAt)
+            VALUES (${userId}, ${phone || null}, ${sign}, NOW(3), NOW(3))
+            ON DUPLICATE KEY UPDATE
+                phone = VALUES(phone),
+                sign = VALUES(sign),
+                updatedAt = NOW(3)
+        `;
+    }
+
+    async getDailyHoroscopeRecord(dateIso, sign) {
+        const rows = await prisma.$queryRaw`
+            SELECT id, date, sign, horoscope
+            FROM daily_horoscopes
+            WHERE date = ${dateIso} AND sign = ${sign}
+            LIMIT 1
+        `;
+        return rows?.[0] || null;
+    }
+
+    async saveDailyHoroscopeRecord({ dateIso, sign, horoscope }) {
+        await prisma.$executeRaw`
+            INSERT INTO daily_horoscopes (date, sign, horoscope, createdAt, updatedAt)
+            VALUES (${dateIso}, ${sign}, ${horoscope}, NOW(3), NOW(3))
+            ON DUPLICATE KEY UPDATE
+                horoscope = VALUES(horoscope),
+                updatedAt = NOW(3)
+        `;
+    }
+
+    extractFirstDivByClass(html, className) {
+        const source = String(html || '');
+        const classPattern = new RegExp(`<div\\b[^>]*class=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>`, 'i');
+        const startMatch = classPattern.exec(source);
+        if (!startMatch || startMatch.index < 0) return null;
+
+        const startIndex = startMatch.index;
+        const openEnd = startIndex + startMatch[0].length;
+        const tagPattern = /<\/?div\b[^>]*>/gi;
+        tagPattern.lastIndex = openEnd;
+
+        let depth = 1;
+        let match;
+        while ((match = tagPattern.exec(source))) {
+            const token = match[0];
+            if (/^<div\b/i.test(token)) {
+                depth += 1;
+            } else {
+                depth -= 1;
+                if (depth === 0) {
+                    return source.slice(startIndex, tagPattern.lastIndex);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    extractParagraphTextFromHtml(html) {
+        const paragraphMatch = String(html || '').match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+        if (!paragraphMatch) return '';
+
+        return this.normalizeText(
+            this.decodeHtmlEntities(
+                paragraphMatch[1]
+                    .replace(/<br\s*\/?>/gi, '\n')
+                    .replace(/<[^>]+>/g, ' ')
+            )
+        );
+    }
+
+    async fetchHoroscopeFromUol(signSlug) {
+        const url = `https://www.uol.com.br/universa/horoscopo/${signSlug}/horoscopo-do-dia/`;
+        const response = await fetch(url, {
+            headers: {
+                'user-agent': 'Mozilla/5.0 BootWhats/1.0',
+                'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`UOL HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+        const container = this.extractFirstDivByClass(html, 'horoscope-open-content');
+        const horoscope = this.extractParagraphTextFromHtml(container);
+
+        if (!horoscope) {
+            throw new Error('Horóscopo não encontrado na página da UOL.');
+        }
+
+        return horoscope;
+    }
+
+    async getOrCreateDailyHoroscope(signSlug) {
+        const { iso } = this.getHoroscopeDateInfo();
+        const existing = await this.getDailyHoroscopeRecord(iso, signSlug);
+        if (existing?.horoscope) {
+            return String(existing.horoscope).trim();
+        }
+
+        const fetched = await this.fetchHoroscopeFromUol(signSlug);
+        await this.saveDailyHoroscopeRecord({
+            dateIso: iso,
+            sign: signSlug,
+            horoscope: fetched
+        });
+        return fetched;
+    }
+
+    formatHoroscopeMessage(signInfo, horoscope) {
+        const { display } = this.getHoroscopeDateInfo();
+        return [
+            `${signInfo.emoji} *Horóscopo de ${signInfo.label}*`,
+            `📅 ${display}`,
+            '',
+            horoscope,
+            '',
+            'Fonte: UOL'
+        ].join('\n');
+    }
+
+    async handleHoroscopo(msg, _chat, args) {
+        const userId = getSenderId(msg);
+        if (!userId) {
+            await msg.reply('❌ Não consegui identificar o usuário para consultar seu horóscopo.');
+            return;
+        }
+
+        const rawSign = String(args?.join(' ') || '').trim();
+        const phone = await this.getFromNumber(msg);
+
+        try {
+            let signInfo = null;
+
+            if (rawSign) {
+                signInfo = this.resolveHoroscopeSign(rawSign);
+                if (!signInfo) {
+                    await msg.reply(`❌ Signo inválido. Use um destes em português: ${this.listHoroscopeSigns()}.`);
+                    return;
+                }
+
+                await this.saveUserHoroscopeRecord({
+                    userId,
+                    phone,
+                    sign: signInfo.slug
+                });
+            } else {
+                const userRecord = await this.getUserHoroscopeRecord(userId);
+                if (!userRecord?.sign) {
+                    await msg.reply(`❓ Você ainda não cadastrou seu signo. Use */horoscopo [signo]*. Opções: ${this.listHoroscopeSigns()}.`);
+                    return;
+                }
+
+                signInfo = this.getHoroscopeSignInfo(String(userRecord.sign).trim());
+                if (!signInfo) {
+                    await msg.reply(`❌ Seu signo cadastrado está inválido. Use */horoscopo [signo]* para atualizar. Opções: ${this.listHoroscopeSigns()}.`);
+                    return;
+                }
+
+                if (!userRecord.phone && phone) {
+                    await this.saveUserHoroscopeRecord({
+                        userId,
+                        phone,
+                        sign: signInfo.slug
+                    });
+                }
+            }
+
+            const horoscope = await this.getOrCreateDailyHoroscope(signInfo.slug);
+            await msg.reply(this.formatHoroscopeMessage(signInfo, horoscope));
+        } catch (err) {
+            console.error('Erro no /horoscopo:', err);
+            const errorMessage = String(err?.message || err || '').toLowerCase();
+            if (errorMessage.includes('doesn\'t exist') || errorMessage.includes('does not exist') || errorMessage.includes('unknown table')) {
+                await msg.reply('❌ O módulo de horóscopo ainda não está disponível. Rode as migrations e tente novamente.');
+                return;
+            }
+            await msg.reply('❌ Não consegui consultar o horóscopo agora.');
+        }
+    }
+
     async handleEstatisticas(msg, chat, args) {
         const raw = String(args?.[0] || '').toLowerCase().trim();
         const mode = raw === 'diario' || raw === 'daily' ? 'day'
@@ -1141,6 +1394,9 @@ _versão: 2.8.8_`;
 
 - 🔮 */oraculo*  
   Consulta o oráculo místico e retorna sua previsão da semana.
+
+- ✨ */horoscopo*  
+  Sem parâmetro, usa seu signo cadastrado e retorna o horóscopo do dia. Com */horoscopo [signo]* em português, cadastra/atualiza seu signo e retorna a previsão do dia.
 
 - 😂 */piada*  
   Envia uma piada aleatória do bot.

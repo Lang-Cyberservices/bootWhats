@@ -169,3 +169,26 @@ model BookRecomendation {
 
   @@map("book_recomendation")
 }
+
+model UserHoroscope {
+  id        Int      @id @default(autoincrement())
+  userId    String   @unique @db.VarChar(191)
+  phone     String?  @db.VarChar(191)
+  sign      String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_horoscopes")
+}
+
+model DailyHoroscope {
+  id         Int      @id @default(autoincrement())
+  date       DateTime @db.Date
+  sign       String   @db.VarChar(64)
+  horoscope  String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([date, sign])
+  @@map("daily_horoscopes")
+}
