@@ -9,6 +9,7 @@ const ImageAnalyzer = require('./services/ImageAnalyzer');
 const CommandHandler = require('./services/CommandHandler');
 const AuditLogger = require('./services/AuditLogger');
 const OracleService = require('./services/OracleService');
+const DiceRoller = require('./services/DiceRoller');
 const { handleGroupJoin } = require('./services/WelcomeService');
 const { connectDatabase } = require('./services/database');
 const StatsCounter = require('./services/StatsCounter');
@@ -28,9 +29,10 @@ let model;
 let imageAnalyzer;
 const auditLogger = new AuditLogger();
 const oracleService = new OracleService(auditLogger);
+const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
-const commandHandler = new CommandHandler(auditLogger, oracleService);
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
 

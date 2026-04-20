@@ -95,9 +95,10 @@ function normalizeCommandText(value) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService) {
+    constructor(auditLogger, oracleService, diceRoller = null) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
+        this.diceRoller = diceRoller;
         this.client = null;
     }
 
@@ -111,17 +112,22 @@ class CommandHandler {
 
         const [rawCommand, ...args] = body.trim().split(/\s+/);
         const command = String(rawCommand || '').toLowerCase();
+        const diceCommandInfo = this.diceRoller?.extractExpression(body) || null;
+        const canonicalCommand = diceCommandInfo?.isDiceCommand ? '/d' : command;
+        const canonicalArgs = diceCommandInfo?.isDiceCommand
+            ? [diceCommandInfo.expression].filter(Boolean)
+            : args;
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo' ];
-        const isKnown = knownCommands.includes(command);
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/d' ];
+        const isKnown = knownCommands.includes(canonicalCommand);
         if (isKnown && command !== '/rank') {
             try {
                 const authorPhone = await this.getFromNumber(msg);
                 await prisma.commandLog.create({
                     data: {
-                        command,
-                        args: args?.length ? JSON.stringify(args) : null,
+                        command: canonicalCommand,
+                        args: canonicalArgs?.length ? JSON.stringify(canonicalArgs) : null,
                         chatId: chat?.id?._serialized || null,
                         chatName: chat?.name || null,
                         authorId: authorId || null,
@@ -144,6 +150,10 @@ class CommandHandler {
 
         if (command === '/oraculo') {
             return this.handleOraculo(msg, chat);
+        }
+
+        if (diceCommandInfo?.isDiceCommand) {
+            return this.handleDice(msg, diceCommandInfo.expression);
         }
 
         if (command === '/horoscopo' || command === '/horóscopo' || command === '/signo') {
@@ -201,6 +211,25 @@ class CommandHandler {
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
+    }
+
+    async handleDice(msg, expression) {
+        if (!this.diceRoller) {
+            await msg.reply('❌ O módulo de rolagem ainda não está disponível.');
+            return;
+        }
+
+        try {
+            const result = this.diceRoller.roll(expression);
+            await msg.reply(result);
+        } catch (err) {
+            if (err?.name === 'DiceRollerError') {
+                await msg.reply(err.message || '❌ Não consegui interpretar essa rolagem.');
+                return;
+            }
+            console.error('Erro no /d:', err);
+            await msg.reply('❌ Não consegui interpretar essa rolagem.');
+        }
     }
 
     async handleCotacao(msg, args) {
@@ -1397,6 +1426,9 @@ _versão: 2.8.8_`;
 
 - ✨ */horoscopo*, */horóscopo* ou */signo*  
   Sem parâmetro, usa seu signo cadastrado e retorna o horóscopo do dia. Com o comando seguido de *[signo]* em português, cadastra/atualiza seu signo e retorna a previsão do dia.
+
+- 🎲 */d*, */d6*, */2d6*, */3x1d20*  
+  Faz rolagens de RPG sem espaços. Aceita múltiplos blocos, filtros *h/l* e modificador final. Exemplos: */d 2d6+1d4*, */4d6h3*, */2x2d6h1+2*.
 
 - 😂 */piada*  
   Envia uma piada aleatória do bot.
