@@ -111,6 +111,23 @@ class CommandHandler {
         return err?.name === 'ProtocolError' && message.includes('timed out');
     }
 
+    decodeMediaBuffer(media) {
+        const rawData = typeof media?.data === 'string' ? media.data.trim() : '';
+        if (!rawData) return null;
+
+        try {
+            const buffer = Buffer.from(rawData, 'base64');
+            return buffer.length ? buffer : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    isUnsupportedImageError(err) {
+        const message = String(err?.message || err || '').toLowerCase();
+        return message.includes('unsupported image format');
+    }
+
     async safeReply(msg, text) {
         try {
             await msg.reply(text);
@@ -992,7 +1009,11 @@ class CommandHandler {
             return;
         }
 
-        const bufferOriginal = Buffer.from(media.data, 'base64');
+        const bufferOriginal = this.decodeMediaBuffer(media);
+        if (!bufferOriginal) {
+            await msg.reply('❌ A mídia recebida veio inválida ou incompleta. Tente novamente com outra imagem ou figurinha.');
+            return;
+        }
         const md5 = require('node:crypto').createHash('md5').update(bufferOriginal).digest('hex');
         const authorId = getSenderId(msg);
 
@@ -1568,7 +1589,22 @@ _versão: 2.8.8_`;
 
             // Para imagens, normaliza para WEBP 512x512 (padrão de sticker)
             if (mime.startsWith('image/')) {
-                const inputBuffer = Buffer.from(media.data, 'base64');
+                const inputBuffer = this.decodeMediaBuffer(media);
+                if (!inputBuffer) {
+                    await msg.reply('❌ A imagem citada veio inválida ou incompleta. Envie novamente e tente criar a figurinha.');
+                    return;
+                }
+
+                try {
+                    await sharp(inputBuffer, { animated: true }).metadata();
+                } catch (err) {
+                    if (this.isUnsupportedImageError(err)) {
+                        await msg.reply('❌ Esse arquivo de imagem não é compatível para virar figurinha. Tente outra mídia.');
+                        return;
+                    }
+                    throw err;
+                }
+
                 const webpBuffer = await sharp(inputBuffer, { animated: true })
                     .resize(512, 512, {
                         fit: 'contain',
@@ -1587,7 +1623,7 @@ _versão: 2.8.8_`;
             });
         } catch (err) {
             console.error('Erro ao gerar sticker:', err);
-            await msg.reply('❌      ');
+            await msg.reply('❌ Não consegui gerar a figurinha com essa mídia.');
         }
     }
 

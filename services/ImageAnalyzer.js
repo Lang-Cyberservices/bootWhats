@@ -45,7 +45,15 @@ class ImageAnalyzer {
             }
             if (!media) return;
 
-            const bufferOriginal = Buffer.from(media.data, 'base64');
+            const bufferOriginal = this.decodeMediaBuffer(media);
+            if (!bufferOriginal) {
+                console.warn('Mídia ignorada: payload vazio ou base64 inválido.', {
+                    messageId: msg.id?._serialized || msg.id?.id,
+                    mimetype: media?.mimetype || null,
+                    type: msg.type
+                });
+                return;
+            }
             const mime = (media.mimetype || '').toLowerCase();
             const md5 = crypto.createHash('md5').update(bufferOriginal).digest('hex');
             const cached = await prisma.mediaHash.findUnique({ where: { md5 } });
@@ -57,34 +65,14 @@ class ImageAnalyzer {
             }
             const inputSize = this.getModelInputSize(this.model) || this.inputSize;
             const isAnimated = mime.includes('gif') || mime.includes('webp') || msg.type === 'sticker';
-
-            const frameBuffers = [];
-            if (isAnimated) {
-                const frameCount = await sharp(bufferOriginal, { animated: true }).metadata()
-                    .then((m) => m.pages || 1)
-                    .catch(() => 1);
-                const lastIndex = Math.max(0, frameCount - 1);
-
-                const firstFrame = await sharp(bufferOriginal, { animated: true, page: 0 })
-                    .toFormat('png')
-                    .resize(inputSize, inputSize, { fit: 'fill' })
-                    .toBuffer();
-                frameBuffers.push(firstFrame);
-
-                if (lastIndex !== 0) {
-                    const lastFrame = await sharp(bufferOriginal, { animated: true, page: lastIndex })
-                        .toFormat('png')
-                        .resize(inputSize, inputSize, { fit: 'fill' })
-                        .toBuffer();
-                    frameBuffers.push(lastFrame);
-                }
-            } else {
-                const bufferProcessado = await sharp(bufferOriginal)
-                    .toFormat('png')
-                    .resize(inputSize, inputSize, { fit: 'fill' })
-                    .toBuffer();
-                frameBuffers.push(bufferProcessado);
-            }
+            const frameBuffers = await this.extractFrameBuffers(bufferOriginal, {
+                inputSize,
+                isAnimated,
+                messageId: msg.id?._serialized || msg.id?.id,
+                mime,
+                type: msg.type
+            });
+            if (!frameBuffers.length) return;
 
             let predictions = [];
             for (const frameBuffer of frameBuffers) {
@@ -152,6 +140,72 @@ class ImageAnalyzer {
         } catch (err) {
             console.error('Erro no processamento da imagem:', err);
         }
+    }
+
+    decodeMediaBuffer(media) {
+        const rawData = typeof media?.data === 'string' ? media.data.trim() : '';
+        if (!rawData) return null;
+
+        try {
+            const buffer = Buffer.from(rawData, 'base64');
+            return buffer.length ? buffer : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    async extractFrameBuffers(bufferOriginal, context = {}) {
+        const { inputSize, isAnimated, messageId, mime, type } = context;
+        let metadata;
+
+        try {
+            metadata = await sharp(bufferOriginal, { animated: isAnimated }).metadata();
+        } catch (err) {
+            if (this.isUnsupportedImageError(err)) {
+                console.warn('Mídia ignorada: formato não suportado pelo sharp.', {
+                    messageId,
+                    mimetype: mime || null,
+                    type,
+                    error: err?.message || String(err)
+                });
+                return [];
+            }
+            throw err;
+        }
+
+        const frameBuffers = [];
+        if (isAnimated) {
+            const frameCount = metadata?.pages || 1;
+            const lastIndex = Math.max(0, frameCount - 1);
+
+            const firstFrame = await sharp(bufferOriginal, { animated: true, page: 0 })
+                .toFormat('png')
+                .resize(inputSize, inputSize, { fit: 'fill' })
+                .toBuffer();
+            frameBuffers.push(firstFrame);
+
+            if (lastIndex !== 0) {
+                const lastFrame = await sharp(bufferOriginal, { animated: true, page: lastIndex })
+                    .toFormat('png')
+                    .resize(inputSize, inputSize, { fit: 'fill' })
+                    .toBuffer();
+                frameBuffers.push(lastFrame);
+            }
+            return frameBuffers;
+        }
+
+        const bufferProcessado = await sharp(bufferOriginal)
+            .toFormat('png')
+            .resize(inputSize, inputSize, { fit: 'fill' })
+            .toBuffer();
+        frameBuffers.push(bufferProcessado);
+
+        return frameBuffers;
+    }
+
+    isUnsupportedImageError(err) {
+        const message = String(err?.message || err || '').toLowerCase();
+        return message.includes('unsupported image format');
     }
 
     getModelInputSize(model) {
