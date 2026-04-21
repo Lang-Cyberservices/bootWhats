@@ -22,6 +22,7 @@ const webVersion = (process.env.WWEB_VERSION || '2.3000.1035465378').trim();
 const ingestPort = Number(process.env.HTTP_INGEST_PORT) || 5000;
 const ingestKey = (process.env.HTTP_INGEST_KEY || '').trim();
 const ingestGroupId = (process.env.HTTP_INGEST_GROUP_ID || '').trim();
+const puppeteerProtocolTimeoutMs = Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS) || 300000;
 let seenGroupIdsInDev = null;
 let isClientReady = false;
 
@@ -97,6 +98,7 @@ const client = new Client({
         strict: false
     },
     puppeteer: {
+        protocolTimeout: puppeteerProtocolTimeoutMs,
         args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',

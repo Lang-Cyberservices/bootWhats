@@ -12,7 +12,7 @@ const fs = require('node:fs/promises');
 const { setTimeout: sleep } = require('node:timers/promises');
 
 // Controle simples de flood por usuário (em memória)
-const COMMAND_WINDOW_MS = 60_000;
+const COMMAND_WINDOW_MS = 2 * 60_000;
 const COTACAO_COOLDOWN_MS = 3 * 60 * 1000;
 const DEFAULT_MAX_COMMANDS_PER_MINUTE = 3;
 const MAX_COMMANDS_PER_MINUTE = (() => {
@@ -104,6 +104,21 @@ class CommandHandler {
 
     setClient(client) {
         this.client = client;
+    }
+
+    isProtocolTimeoutError(err) {
+        const message = String(err?.message || err || '');
+        return err?.name === 'ProtocolError' && message.includes('timed out');
+    }
+
+    async safeReply(msg, text) {
+        try {
+            await msg.reply(text);
+            return true;
+        } catch (replyErr) {
+            console.error('Falha ao enviar resposta de fallback:', replyErr);
+            return false;
+        }
     }
 
     async handle(msg, chat) {
@@ -1489,7 +1504,12 @@ _versão: 2.8.8_`;
             });
         } catch (err) {
             console.error('Erro no /pergunta:', err);
-            await msg.reply('❌ Não consegui consultar a bola 8 agora.');
+            if (this.isProtocolTimeoutError(err)) {
+                console.error('Envio do /pergunta ignorou o fallback porque a sessão do WhatsApp Web ficou sem responder.');
+                return;
+            }
+
+            await this.safeReply(msg, '❌ Não consegui consultar a bola 8 agora.');
         }
     }
 
