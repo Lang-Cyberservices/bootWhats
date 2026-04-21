@@ -121,6 +121,33 @@ class CommandHandler {
         }
     }
 
+    serializeWhatsAppId(value) {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+            if (typeof value._serialized === 'string') return value._serialized;
+            if (typeof value.id === 'string') return value.id;
+            if (typeof value.user === 'string' && typeof value.server === 'string') {
+                return `${value.user}@${value.server}`;
+            }
+        }
+        return null;
+    }
+
+    findParticipantIdByDigits(chat, digits) {
+        if (!digits) return null;
+
+        const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+        const normalize = (value) => String(value || '').replace(/\D/g, '');
+        const found = participants.find((participant) => {
+            const participantId = this.serializeWhatsAppId(participant?.id) || participant?.id?.user || '';
+            const normalized = normalize(participantId);
+            return normalized === digits || normalized.endsWith(digits);
+        });
+
+        return this.serializeWhatsAppId(found?.id);
+    }
+
     async handle(msg, chat) {
         const body = msg.body || '';
         if (!body.startsWith('/')) return;
@@ -370,27 +397,24 @@ class CommandHandler {
     async resolveBanTarget(msg, chat, args) {
         const mentionIds = Array.isArray(msg?.mentionedIds) ? msg.mentionedIds.filter(Boolean) : [];
         if (mentionIds.length > 0) {
-            return String(mentionIds[0]);
+            const mentionedId = this.serializeWhatsAppId(mentionIds[0]);
+            if (mentionedId) {
+                return mentionedId;
+            }
         }
 
         const raw = String(args?.join(' ') || '');
         const digits = raw.replace(/\D/g, '');
         if (digits) {
-            const participants = Array.isArray(chat?.participants) ? chat.participants : [];
-            const normalize = (value) => String(value || '').replace(/\D/g, '');
-            const found = participants.find((p) => {
-                const pid = p?.id?._serialized || p?.id?.user || '';
-                const normalized = normalize(pid);
-                return normalized === digits || normalized.endsWith(digits);
-            });
-            if (found?.id?._serialized) {
-                return found.id._serialized;
+            const participantId = this.findParticipantIdByDigits(chat, digits);
+            if (participantId) {
+                return participantId;
             }
         }
 
         if (msg?.hasQuotedMsg) {
             const quoted = await msg.getQuotedMessage();
-            const quotedAuthorId = getSenderId(quoted);
+            const quotedAuthorId = this.serializeWhatsAppId(getSenderId(quoted));
             if (quotedAuthorId) {
                 return quotedAuthorId;
             }
@@ -575,6 +599,12 @@ class CommandHandler {
         }
 
         try {
+            const normalizedTargetId = this.serializeWhatsAppId(userToBan) || this.findParticipantIdByDigits(chat, String(userToBan).replace(/\D/g, ''));
+            if (!normalizedTargetId) {
+                await msg.reply('❌ Não consegui identificar corretamente o participante para remover.');
+                return;
+            }
+
             const banStickerPath = path.join(__dirname, '..', 'storage', 'ban.webp');
             const stickerBuffer = await fs.readFile(banStickerPath);
             const stickerMedia = new MessageMedia('image/webp', stickerBuffer.toString('base64'), 'ban.webp');
@@ -589,13 +619,13 @@ class CommandHandler {
             // antes da remocao do participante.
             await sleep(500);
 
-            await chat.removeParticipants([userToBan]);
+            await chat.removeParticipants([normalizedTargetId]);
             const fromNumber = await this.getFromNumber(msg);
             await this.auditLogger?.log('BAN_EXECUTED', {
                 chatId: chat?.id?._serialized,
                 phone: fromNumber,
                 authorId,
-                targetId: userToBan,
+                targetId: normalizedTargetId,
                 messageId: msg.id?._serialized || msg.id?.id,
                 content: msg.body
             });
