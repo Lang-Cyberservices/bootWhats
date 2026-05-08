@@ -3,18 +3,75 @@ services:
     image: mariadb:12.2
     container_name: mariadb
     privileged: true
-
+    restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: 123root4
       MARIADB_DATABASE: boot_whats
       MARIADB_USER: tiago
       MARIADB_PASSWORD: 123tiago4
       MARIADB_ROOT_HOST: "%"
-
     ports:
       - "3306:3306"
-
     volumes:
       - ./run:/var/lib/mysql
-
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  evolution-redis:
+    image: redis:7
+    container_name: evolution_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - evolution_redis:/data
+
+  evolution-postgres:
+    image: postgres:15
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+    ports:
+      - "5432:5432"
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution_api
+    restart: unless-stopped
+    depends_on:
+      - evolution-redis
+      - evolution-postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      AUTHENTICATION_API_KEY: bootwhats-dev-key
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/0
+
+
+volumes:
+  evolution_instances:
+  evolution_redis:
+  evolution_postgres:

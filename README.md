@@ -1,17 +1,18 @@
 # BootWhats
 
-Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos auxiliares, usando `whatsapp-web.js`, `nsfwjs` e Prisma + MariaDB.
+Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos auxiliares, usando Evolution API, `nsfwjs` e Prisma + MariaDB.
 
 **Resumo rápido**
-1. Suba o MariaDB (docker compose).
+1. Suba o MariaDB e a Evolution API (`docker compose`).
 2. Copie `.env_example` para `.env` e ajuste `DATABASE_URL` e chaves.
 3. Rode `npm install`.
 4. Rode migrações do Prisma.
-5. Inicie com `node index.js` e escaneie o QR.
+5. Inicie com `node index.js` e escaneie o QR gerado pela Evolution API.
 
 ## Requisitos
 - Node.js **22 LTS** (recomendado para compatibilidade com `@tensorflow/tfjs-node`).
 - MariaDB 10+ (ou via Docker).
+- Docker Compose para o stack local da Evolution API.
 - Python 3 (opcional, usado para LAION no score de imagens).
 - Dependências nativas para `sharp` e `canvas` (instaladas via npm, geralmente já resolvem).
 
@@ -27,7 +28,7 @@ cp .env_example .env
 ```
 Edite `.env` com os valores corretos (principalmente `DATABASE_URL` e `GEMINI_API_KEY`).
 
-3. Suba o banco (opção com Docker):
+3. Suba o banco e a Evolution API:
 ```bash
 docker compose up -d
 ```
@@ -41,7 +42,7 @@ npx prisma migrate deploy
 ```bash
 node index.js
 ```
-No primeiro uso, escaneie o QR do WhatsApp Web. O estado da sessão fica em `.wwebjs_auth`.
+No primeiro uso, o bot tenta garantir a instância da Evolution API, configura o webhook em `http://host.docker.internal:5000/evolution/webhook` (por padrão em dev) e imprime o QR no terminal.
 
 ## Ferramenta de gestão
 O painel de gestão fica em `tools/gestao` e permite administrar admins, piadas, boas-vindas e status do sistema.
@@ -60,6 +61,11 @@ Veja `.env_example` para todas as opções. As mais usadas:
 - `NSFW_EVIDENCE_DIR`: pasta para salvar evidências de mídia bloqueada.
 - `GEMINI_API_KEY` / `GEMINI_MODEL`: usados pelo serviço Oracle.
 - `MAX_COMMANDS_PER_MINUTE`: rate limit dos comandos.
+- `EVOLUTION_API_URL`: URL da Evolution API local.
+- `EVOLUTION_GLOBAL_API_KEY`: chave global da Evolution API.
+- `EVOLUTION_INSTANCE_NAME`: nome da instância usada pelo bot.
+- `EVOLUTION_WEBHOOK_URL`: URL que a Evolution API vai chamar para entregar eventos.
+- `EVOLUTION_WEBHOOK_SECRET`: segredo opcional validado pelo endpoint `/evolution/webhook`.
 
 ## Ferramenta de validação de imagem (`tools/validate_evidence_md5.js`)
 Esta ferramenta analisa uma imagem local, calcula o `md5`, gera as notas (scores) e indica se a imagem seria bloqueada pela lógica atual.
@@ -99,6 +105,20 @@ Você também pode ajustar:
 - `models/`: modelo NSFWJS.
 - `prisma/`: schema e migrações.
 - `tools/`: utilitários (incluindo a validação de imagens).
+
+## Dev com Docker
+O `docker-compose.yml` sobe:
+- `mariadb` para o Prisma.
+- `evolution-api` em `http://localhost:8080`.
+- `evolution-manager` em `http://localhost:3000`.
+- `evolution-redis` e `evolution-postgres` como dependências da Evolution.
+
+Fluxo sugerido:
+1. `docker compose up -d`
+2. `npm install`
+3. `npx prisma migrate deploy`
+4. `node index.js`
+5. Escaneie o QR exibido no terminal do bot.
 
 ## Problemas comuns
 **Erro `DATABASE_URL não foi definida no .env`**

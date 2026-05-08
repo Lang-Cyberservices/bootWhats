@@ -1,6 +1,6 @@
 const { getSenderId } = require('./messageUtils');
 const sharp = require('sharp');
-const { MessageMedia } = require('whatsapp-web.js');
+const { MessageMedia } = require('./MessageMedia');
 const { prisma } = require('./database');
 const ytdl = require('@distube/ytdl-core');
 const { saveEvidence } = require('./mediaUtils');
@@ -20,6 +20,7 @@ const MAX_COMMANDS_PER_MINUTE = (() => {
     const n = raw ? Number(raw) : NaN;
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_COMMANDS_PER_MINUTE;
 })();
+const execFileAsync = promisify(execFile);
 const commandHistoryByUser = new Map(); // key: authorId, value: number[]
 const NEWS_COOLDOWN_MS = 14 * 60_000;
 const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
@@ -1467,7 +1468,7 @@ class CommandHandler {
 
     async handleSobre(msg, _chat) {
         const text =
-`🤖 *Sobre o bot*
+`*Sobre o bot*
 
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto, 
@@ -1614,6 +1615,12 @@ _versão: 2.8.8_`;
                     .toBuffer();
 
                 stickerMedia = new MessageMedia('image/webp', webpBuffer.toString('base64'), 'sticker.webp');
+            } else if (mime.startsWith('video/')) {
+                await msg.reply('❌ GIF/vídeo animado ainda não vira figurinha animada pela Evolution API atual. Use uma imagem por enquanto.');
+                return;
+            } else {
+                await msg.reply('❌ Esse tipo de mídia não vira figurinha. Responda uma imagem ou GIF/vídeo curto.');
+                return;
             }
 
             await chat.sendMessage(stickerMedia, {
@@ -1671,7 +1678,6 @@ _versão: 2.8.8_`;
             return;
         }
 
-        const execFileAsync = promisify(execFile);
         const tmpName = `yt_${Date.now()}.mp4`;
         const tmpPath = path.join(os.tmpdir(), tmpName);
 
