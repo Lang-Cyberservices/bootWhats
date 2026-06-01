@@ -37,18 +37,59 @@ const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
 
+const MAX_INIT_ATTEMPTS = 10;
+const WATCHDOG_INTERVAL_MS = 10 * 60_000;
+let watchdogTimer = null;
+
 async function startClientWithRetry(attempt = 1) {
+    if (attempt > MAX_INIT_ATTEMPTS) {
+        console.error(`❌ ${MAX_INIT_ATTEMPTS} tentativas esgotadas. Intervenção manual necessária.`);
+        return;
+    }
     try {
         await client.initialize();
     } catch (err) {
         const msg = err?.message || err;
         const delayMs = Math.min(30000, 2000 * attempt);
-        console.error(`❌ Falha ao inicializar o WhatsApp Web (tentativa ${attempt}).`, msg);
+        console.error(`❌ Falha ao inicializar o WhatsApp Web (tentativa ${attempt}/${MAX_INIT_ATTEMPTS}).`, msg);
         console.error(`🔁 Tentando novamente em ${Math.round(delayMs / 1000)}s...`);
-        setTimeout(() => {
-            startClientWithRetry(attempt + 1);
-        }, delayMs);
+        setTimeout(() => startClientWithRetry(attempt + 1), delayMs);
     }
+}
+
+async function triggerClientReconnect() {
+    isClientReady = false;
+    try { await client.destroy(); } catch (_) {}
+    await startClientWithRetry();
+}
+
+async function checkClientHealth() {
+    if (!isClientReady) return;
+    try {
+        const state = await Promise.race([
+            client.getState(),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('watchdog-timeout')), 30_000)
+            )
+        ]);
+        if (state !== 'CONNECTED') {
+            console.warn(`⚠️ Watchdog: estado "${state}" inesperado. Reconectando...`);
+            await triggerClientReconnect();
+        }
+    } catch (err) {
+        console.warn('⚠️ Watchdog: cliente sem resposta —', err.message, '— Reconectando...');
+        await triggerClientReconnect();
+    }
+}
+
+function startWatchdog() {
+    if (watchdogTimer) return;
+    watchdogTimer = setInterval(() => {
+        checkClientHealth().catch((err) =>
+            console.error('Watchdog: erro inesperado:', err?.message || err)
+        );
+    }, WATCHDOG_INTERVAL_MS);
+    watchdogTimer.unref?.();
 }
 
 
@@ -119,6 +160,7 @@ client.on('qr', (qr) => {
 client.on('ready',  async() => {
     isClientReady = true;
     console.log('🚀 Monitor de grupos ATIVADO!');
+    startWatchdog();
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
     }
@@ -127,7 +169,19 @@ client.on('ready',  async() => {
         console.warn('⚠️ BOOT_NUMBER não definido. Ignorando setBotId.');
         return;
     }
-    const numberId = await client.getNumberId(myNumber);
+    // Retry com delay: o evento 'ready' pode disparar antes do layer de comms
+    // interno do WhatsApp Web (startComms) estar pronto, causando sendIq errors.
+    const numberId = await (async () => {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+                return await client.getNumberId(myNumber);
+            } catch (err) {
+                console.warn(`⚠️ getNumberId falhou (tentativa ${attempt}/3):`, err.message);
+            }
+        }
+        return null;
+    })();
     if (numberId?._serialized) {
         llamaResponder.setBotId(numberId._serialized);
     } else {
@@ -135,8 +189,24 @@ client.on('ready',  async() => {
     }
 });
 
-client.on('disconnected', () => {
+client.on('disconnected', async (reason) => {
+    console.warn(`⚠️ WhatsApp desconectado. Motivo: ${reason}`);
     isClientReady = false;
+    if (reason === 'LOGOUT') {
+        console.error('🔒 Sessão encerrada pelo WhatsApp (LOGOUT). Escaneie o QR novamente.');
+        return;
+    }
+    console.log('🔁 Reconectando em 10s...');
+    setTimeout(triggerClientReconnect, 10_000);
+});
+
+client.on('auth_failure', (message) => {
+    console.error(`❌ Falha de autenticação: ${message}. Escaneie o QR novamente.`);
+    isClientReady = false;
+});
+
+client.on('change_state', (state) => {
+    console.log(`📶 Estado: ${state}`);
 });
 
 client.on('message', async (msg) => {
