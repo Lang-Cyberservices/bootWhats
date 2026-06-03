@@ -100,10 +100,15 @@ class CommandHandler {
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
         this.client = null;
+        this.getBotReadyAt = null;
     }
 
     setClient(client) {
         this.client = client;
+    }
+
+    setBotReadyAt(fn) {
+        this.getBotReadyAt = fn;
     }
 
     isProtocolTimeoutError(err) {
@@ -222,6 +227,10 @@ class CommandHandler {
 
         if (command === '/horoscopo' || command === '/horóscopo' || command === '/signo') {
             return this.handleHoroscopo(msg, chat, args);
+        }
+
+        if (command === '/status') {
+            return this.handleStatus(msg);
         }
 
         if (command === '/sobre') {
@@ -1475,6 +1484,56 @@ para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
 Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
 pix@diogenes.ia.br
 _versão: 2.8.8_`;
+
+        await msg.reply(text);
+    }
+
+    async handleStatus(msg) {
+        const readyAt = this.getBotReadyAt?.();
+
+        let uptimeStr = 'indisponível';
+        if (readyAt) {
+            const totalSec = Math.floor((Date.now() - readyAt) / 1000);
+            const d = Math.floor(totalSec / 86400);
+            const h = Math.floor((totalSec % 86400) / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const parts = [];
+            if (d) parts.push(`${d}d`);
+            if (h) parts.push(`${h}h`);
+            if (m) parts.push(`${m}m`);
+            parts.push(`${s}s`);
+            uptimeStr = parts.join(' ');
+        }
+
+        const toMb = (b) => (b / 1024 / 1024).toFixed(0);
+        const pct = (used, total) => ((used / total) * 100).toFixed(1);
+        const rss = process.memoryUsage().rss;
+        const totalRam = os.totalmem();
+        const usedRam  = totalRam - os.freemem();
+
+        let diskStr = 'indisponível';
+        try {
+            const stat = await fs.statfs('/');
+            const bs = stat.bsize;
+            const toGb = (b) => (b / 1024 / 1024 / 1024).toFixed(1);
+            const totalDisk = stat.blocks * bs;
+            const freeDisk  = stat.bfree  * bs;
+            const usedDisk  = totalDisk - freeDisk;
+            diskStr = `(${pct(usedDisk, totalDisk)}%)`;
+        } catch (_) {}
+
+        const [l1, l5, l15] = os.loadavg().map(v => v.toFixed(2));
+
+        const text = [
+            '🟢 *Status do bot*',
+            '',
+            `⏱ *Uptime:* ${uptimeStr}`,
+            `🧠 *RAM processo:* ${toMb(rss)} MB`,
+            `📊 *Uso RAM sistema:* (${pct(usedRam, totalRam)}%)`,
+            `💾 *Uso disco:* ${diskStr}`,
+            `⚙️ *CPU load:* ${l1} · ${l5} · ${l15} _(1/5/15 min)_`,
+        ].join('\n');
 
         await msg.reply(text);
     }

@@ -25,6 +25,7 @@ const ingestGroupId = (process.env.HTTP_INGEST_GROUP_ID || '').trim();
 const puppeteerProtocolTimeoutMs = Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS) || 300000;
 let seenGroupIdsInDev = null;
 let isClientReady = false;
+let botReadyAt = null;
 
 let model;
 let imageAnalyzer;
@@ -34,6 +35,7 @@ const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller);
+commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
 
@@ -159,6 +161,7 @@ client.on('qr', (qr) => {
 
 client.on('ready',  async() => {
     isClientReady = true;
+    botReadyAt = Date.now();
     console.log('🚀 Monitor de grupos ATIVADO!');
     startWatchdog();
     if (isDev && devGroupId) {
