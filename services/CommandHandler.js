@@ -1483,7 +1483,7 @@ Então falhs podem e irão acontecer, ao encotra-las avise que iremos chicotear 
 para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
 Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
 pix@diogenes.ia.br
-_versão: 2.8.8_`;
+_versão: 3.0.0_`;
 
         await msg.reply(text);
     }

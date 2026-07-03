@@ -118,23 +118,48 @@ class OracleService {
                 }
             }
 
-            const prompt = `
-Você é um oráculo misterioso e bem-humorado.
-Gere uma previsão curta (3 a 5 frases) para a semana da pessoa, em português do Brasil.
-Evite falar de morte, doenças graves ou temas sensíveis.
-De um conselho filosofico no final da previsão.
-Use um tom como se fosse um horóscopo de jornal.
-Não pergunte nada para o usuário, apenas faça a previsão.
+            // Seleciona um tema aleatório do banco
+            const totalThemes = await prisma.oracleTheme.count();
+            let theme = 'Destino e futuro'; // fallback caso a tabela esteja vazia
 
-Informações de contexto:
-- Tema da semana: ${luckType}.
+            if (totalThemes > 0) {
+                const randomIndex = Math.floor(Math.random() * totalThemes);
+                const themes = await prisma.oracleTheme.findMany({
+                    skip: randomIndex,
+                    take: 1
+                });
+                if (themes[0]) {
+                    theme = themes[0].theme;
+                }
+            }
+
+            const prompt = `
+Você é um oráculo místico.
+
+Escreva uma previsão semanal em português do Brasil com 4 a 6 frases.
+
+A previsão deve seguir esta estrutura:
+
+1. Comece descrevendo a energia geral da semana de forma ampla e misteriosa, falando sobre emoções, acontecimentos ou mudanças, sem mencionar imediatamente o tema principal.
+2. Em seguida, conecte naturalmente essa energia ao tema principal da semana, fazendo dele apenas o foco central, e não o único assunto abordado.
+3. Faça uma observação sobre relacionamentos, decisões, oportunidades ou desafios, mesmo que não estejam diretamente ligados ao tema principal.
+4. Termine com um conselho filosófico ou reflexivo.
+
+Contexto:
+- Energia predominante: ${luckType}.
+- Tema principal: ${theme}.
 - Animal de poder: ${animalName}.
 - Número da sorte: ${luckyNumberStr}.
 
-Importante:
-- Não repita o cabeçalho "Oráculo da semana".
-- Não fale explicitamente sobre o animal ou o número da sorte.
-- Responda apenas com o texto da previsão em parágrafos curtos.
+Regras:
+- Não mencione explicitamente o animal de poder.
+- Não mencione o número da sorte.
+- Não escreva títulos.
+- Não faça perguntas.
+- Evite falar sobre morte, doenças graves ou tragédias.
+- O texto deve parecer um oráculo antigo: simbólico, levemente misterioso e aberto a interpretações.
+- O tema principal deve ocupar aproximadamente 30% da previsão. Os outros 70% devem abordar a energia geral da semana, relações humanas, escolhas, oportunidades e crescimento pessoal.
+- Responda apenas com o texto da previsão.
 `;
 
             const result = await this.model.generateContent(prompt);
@@ -173,6 +198,7 @@ Importante:
                     weekKey,
                     message: finalMessage,
                     luckType,
+                    theme,
                     luckyNumber,
                     animalName
                 }

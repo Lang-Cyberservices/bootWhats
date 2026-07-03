@@ -12,3 +12,4 @@ package-lock.json
 /tools/.venv
 /.venv
 /.codex
+/.backups

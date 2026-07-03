@@ -41,6 +41,7 @@ model OraclePrediction {
   weekKey   String
   message   String   @db.Text
   luckType  String   @default("SORTE")
+  theme     String?  @db.VarChar(191)
   luckyNumber Int    @default(0)
   animalName String?
   createdAt DateTime @default(now())
@@ -96,6 +97,14 @@ model MessageStatsBucket {
 
   @@unique([chatId, authorId, periodType, periodStart])
   @@map("message_stats_buckets")
+}
+
+model OracleTheme {
+  id        Int      @id @default(autoincrement())
+  theme     String
+  createdAt DateTime @default(now())
+
+  @@map("oracle_themes")
 }
 
 model PhilosopherProtector {
