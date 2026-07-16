@@ -18,7 +18,12 @@ const LlamaResponder = require('./services/LlamaResponder');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
-const webVersion = (process.env.WWEB_VERSION || '2.3000.1035465378').trim();
+// O pin de versão vale só para o carregamento inicial: com sessão ativa o
+// WhatsApp Web se auto-atualiza para a build mais nova em seguida. A
+// compatibilidade com as builds 2.3000.1043xxx (renomeação `_serialized`→`$1`)
+// vem do fork do whatsapp-web.js com o PR wwebjs#201840; quando a correção
+// sair no npm, voltar a dependência para a versão oficial no package.json.
+const webVersion = (process.env.WWEB_VERSION || '2.3000.1043287716').trim();
 const ingestPort = Number(process.env.HTTP_INGEST_PORT) || 5000;
 const ingestKey = (process.env.HTTP_INGEST_KEY || '').trim();
 const ingestGroupId = (process.env.HTTP_INGEST_GROUP_ID || '').trim();
@@ -153,6 +158,22 @@ const client = new Client({
     }
 });
 commandHandler.setClient(client);
+
+// O WhatsApp Web é um PWA: com sessão existente, o service worker serve a
+// página do próprio cache e a versão fixada em `webVersion` é ignorada.
+// O bypass abaixo força a requisição de rede, permitindo que a lib
+// intercepte e sirva o HTML fixado do .wwebjs_cache.
+const origInitWebVersionCache = client.initWebVersionCache.bind(client);
+client.initWebVersionCache = async () => {
+    try {
+        const cdp = await client.pupPage.createCDPSession();
+        await cdp.send('Network.setBypassServiceWorker', { bypass: true });
+    } catch (err) {
+        console.warn('⚠️ Falha ao ativar bypass do service worker:', err?.message || err);
+    }
+    return origInitWebVersionCache();
+};
+
 startIngestServer();
 
 client.on('qr', (qr) => {
@@ -163,6 +184,9 @@ client.on('ready',  async() => {
     isClientReady = true;
     botReadyAt = Date.now();
     console.log('🚀 Monitor de grupos ATIVADO!');
+    try {
+        console.log('📱 Versão do WhatsApp Web carregada:', await client.getWWebVersion());
+    } catch (_) {}
     startWatchdog();
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
@@ -223,7 +247,14 @@ client.on('message', async (msg) => {
     try {
         chat = await msg.getChat();
     } catch (e) {
-        console.error('Erro ao obter chat da mensagem:', e);
+        console.error(
+            'Erro ao obter chat da mensagem:',
+            e?.message || e,
+            '| from:', msg.from,
+            '| author:', msg.author || '-',
+            '| type:', msg.type,
+            '| body:', String(msg.body || '').slice(0, 40)
+        );
         return;
     }
 

@@ -183,7 +183,7 @@ class CommandHandler {
             : args;
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/d' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d' ];
         const isKnown = knownCommands.includes(canonicalCommand);
         if (isKnown && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
@@ -217,7 +217,7 @@ class CommandHandler {
             return this.handleAdm(msg, chat);
         }
 
-        if (command === '/oraculo') {
+        if (command === '/oraculo' || command === '/oráculo') {
             return this.handleOraculo(msg, chat);
         }
 
@@ -281,6 +281,10 @@ class CommandHandler {
 
         if (command === '/pergunta' || command === '/bola8' || command === '/8ball') {
             return this.handlePergunta(msg, chat, args);
+        }
+
+        if (command === '/sorteio') {
+            return this.handleSorteio(msg, chat);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -1567,6 +1571,9 @@ _versão: 3.1.0_`;
 - 🎱 */pergunta*, */bola8* ou */8ball*
   Responde sua pergunta com os poderes  da bola 8.
 
+- 🗳️ */sorteio*
+  Respondendo uma enquete, sorteia alguém que votou nela. Sem enquete, sorteia um participante do grupo.
+
 - 🖼️ */sticker*
   Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
 
@@ -1621,6 +1628,77 @@ _versão: 3.1.0_`;
             }
 
             await this.safeReply(msg, '❌ Não consegui consultar a bola 8 agora.');
+        }
+    }
+
+    async handleSorteio(msg, chat) {
+        try {
+            let quotedPoll = null;
+            if (msg.hasQuotedMsg) {
+                const quoted = await msg.getQuotedMessage();
+                if (quoted?.type === 'poll_creation') {
+                    quotedPoll = quoted;
+                }
+            }
+
+            let winnerId = null;
+            let header = null;
+
+            if (quotedPoll) {
+                const votes = await quotedPoll.getPollVotes();
+                const voterIds = [...new Set(
+                    (votes || [])
+                        .filter((vote) => Array.isArray(vote?.selectedOptions) && vote.selectedOptions.length > 0)
+                        .map((vote) => this.serializeWhatsAppId(vote?.voter))
+                        .filter(Boolean)
+                )];
+
+                if (!voterIds.length) {
+                    await msg.reply('🗳️ Ninguém votou nessa enquete ainda. Sem participantes, não há destino a decidir.');
+                    return;
+                }
+
+                winnerId = voterIds[Math.floor(Math.random() * voterIds.length)];
+                const pollName = String(quotedPoll.body || '').trim();
+                header = pollName
+                    ? `🗳️ *Sorteio da enquete "${pollName}"*`
+                    : '🗳️ *Sorteio da enquete*';
+            } else {
+                const clientId = this.client?.info?.wid?._serialized || null;
+                const participantIds = (Array.isArray(chat?.participants) ? chat.participants : [])
+                    .map((participant) => this.serializeWhatsAppId(participant?.id))
+                    .filter((id) => id && id !== clientId);
+
+                if (!participantIds.length) {
+                    await msg.reply('❌ Este comando só funciona em grupos onde eu consiga ver os participantes.');
+                    return;
+                }
+
+                winnerId = participantIds[Math.floor(Math.random() * participantIds.length)];
+                header = '🎲 *Sorteio do grupo*';
+            }
+
+            let winnerContact = null;
+            if (this.client) {
+                try {
+                    winnerContact = await this.client.getContactById(winnerId);
+                } catch (_) {}
+            }
+            const label = winnerContact?.pushname
+                || winnerContact?.name
+                || winnerContact?.number
+                || String(winnerId).split('@')[0];
+
+            const text = [
+                header,
+                '',
+                `🎉 O destino escolheu: *${label}*`
+            ].join('\n');
+
+            await msg.reply(text);
+        } catch (err) {
+            console.error('Erro no /sorteio:', err);
+            await this.safeReply(msg, '❌ O destino se recusou a escolher alguém agora. Tente novamente.');
         }
     }
 
