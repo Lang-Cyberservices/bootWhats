@@ -39,7 +39,7 @@ final class AuthController
     public function logout(): void
     {
         $this->auth->logout();
-        header('Location: /?route=login');
+        header('Location: /admin');
         exit;
     }
 }

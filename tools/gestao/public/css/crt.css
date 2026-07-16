@@ -1,0 +1,227 @@
+/* Tema CRT verde do painel de gestão — sobrepõe o Bootstrap 5.
+   Carregar DEPOIS do bootstrap.min.css, junto com as fontes
+   Google "Press Start 2P" e "VT323". */
+
+:root {
+    --bg: #050805;
+    --panel: #0a120a;
+    --input-bg: #061006;
+    --green: #33ff66;
+    --green-dim: #1fa348;
+    --green-faint: rgba(51, 255, 102, 0.18);
+    --green-soft: #8fe6a8;
+    --amber: #ffb000;
+    --red: #ff5c5c;
+}
+
+body {
+    background: var(--bg) !important;
+    color: var(--green);
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    line-height: 1.35;
+    text-shadow: 0 0 6px rgba(51, 255, 102, 0.35);
+    overflow-x: hidden;
+}
+
+/* scanlines + vinheta de CRT */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2000;
+    background:
+        repeating-linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 0px,
+            rgba(0, 0, 0, 0) 2px,
+            rgba(0, 0, 0, 0.22) 3px,
+            rgba(0, 0, 0, 0) 4px
+        );
+}
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2001;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
+}
+
+/* ── tipografia ─────────────────────────── */
+h1, h2, h3, .h1, .h2, .h3, .h4, .h5 {
+    font-family: 'Press Start 2P', monospace;
+    text-transform: uppercase;
+    line-height: 1.6;
+}
+
+h1, .h3 { font-size: clamp(15px, 2.6vw, 19px); color: var(--green); }
+
+h2, .h5 { font-size: clamp(10px, 2vw, 12px); color: var(--amber); text-shadow: 0 0 8px rgba(255, 176, 0, 0.4); }
+h2::before, .h5::before { content: '[ '; }
+h2::after, .h5::after { content: ' ]'; }
+
+.text-secondary, .text-muted, .form-text { color: var(--green-dim) !important; }
+.text-primary { color: var(--green) !important; }
+.text-success { color: var(--green) !important; }
+.text-danger { color: var(--red) !important; }
+
+a { color: var(--green); }
+main a:not(.btn):not(.list-group-item):hover { color: var(--bg); background: var(--green); text-shadow: none; }
+
+pre, .mono, .status-box, code {
+    font-family: 'VT323', monospace;
+    color: var(--green-soft);
+    font-size: 1em;
+}
+
+/* ── navbar ─────────────────────────────── */
+.navbar {
+    background: var(--panel) !important;
+    border-bottom: 1px solid var(--green-dim) !important;
+    box-shadow: 0 0 24px var(--green-faint) !important;
+}
+
+.navbar-brand, a.navbar-brand {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    color: var(--amber) !important;
+    text-shadow: 0 0 8px rgba(255, 176, 0, 0.4);
+    text-transform: uppercase;
+}
+a.navbar-brand:hover { color: var(--bg) !important; background: var(--amber); text-shadow: none; }
+
+.navbar .nav-link { color: var(--green-soft) !important; }
+.navbar .nav-link:hover { color: var(--green) !important; }
+.navbar .nav-link.active { color: var(--amber) !important; }
+.navbar .nav-link.text-danger { color: var(--red) !important; }
+.navbar .nav-link.text-danger:hover { color: var(--bg) !important; background: var(--red); text-shadow: none; }
+
+/* ── cards e listas ─────────────────────── */
+.card, .list-group-item {
+    background: var(--panel) !important;
+    border: 1px solid var(--green-dim) !important;
+    color: var(--green);
+}
+.card { border-radius: 6px; box-shadow: 0 0 16px var(--green-faint) !important; }
+.shadow-sm { box-shadow: 0 0 16px var(--green-faint) !important; }
+
+.list-group-item-action:hover, .list-group-item-action:focus {
+    background: rgba(51, 255, 102, 0.08) !important;
+    border-color: var(--green) !important;
+    color: var(--green);
+}
+
+/* ── formulários ────────────────────────── */
+.form-control, .form-select {
+    background: var(--input-bg) !important;
+    border: 1px solid var(--green-dim) !important;
+    color: var(--green) !important;
+    font-family: 'VT323', monospace;
+    font-size: 1.05em;
+    text-shadow: inherit;
+    border-radius: 4px;
+}
+.form-control:focus, .form-select:focus {
+    border-color: var(--green) !important;
+    box-shadow: 0 0 12px var(--green-faint) !important;
+}
+.form-control::placeholder { color: var(--green-dim); }
+.form-control:disabled, .form-control[readonly] {
+    background: var(--panel) !important;
+    color: var(--green-dim) !important;
+}
+
+.form-label, .form-check-label { color: var(--green-soft); margin-bottom: 2px; }
+
+.form-check-input {
+    background-color: var(--input-bg);
+    border-color: var(--green-dim);
+}
+.form-check-input:checked {
+    background-color: var(--green);
+    border-color: var(--green);
+}
+.form-check-input:focus { box-shadow: 0 0 12px var(--green-faint); border-color: var(--green); }
+
+/* ── botões ─────────────────────────────── */
+.btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border-radius: 4px;
+    text-shadow: none;
+}
+.btn-sm { font-size: 9px; padding: 8px 10px; }
+
+.btn-primary, .btn-outline-primary {
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active,
+.btn-outline-primary:hover, .btn-outline-primary:focus, .btn-outline-primary:active {
+    background: var(--green) !important;
+    border-color: var(--green) !important;
+    color: var(--bg) !important;
+    box-shadow: 0 0 16px var(--green-faint);
+}
+
+.btn-danger, .btn-outline-danger {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+}
+.btn-danger:hover, .btn-danger:focus, .btn-danger:active,
+.btn-outline-danger:hover, .btn-outline-danger:focus, .btn-outline-danger:active {
+    background: var(--red) !important;
+    border-color: var(--red) !important;
+    color: var(--bg) !important;
+    box-shadow: 0 0 16px rgba(255, 92, 92, 0.3);
+}
+
+.btn-secondary, .btn-outline-secondary {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-soft);
+}
+.btn-secondary:hover, .btn-secondary:focus, .btn-secondary:active,
+.btn-outline-secondary:hover, .btn-outline-secondary:focus, .btn-outline-secondary:active {
+    background: var(--green-dim) !important;
+    border-color: var(--green-dim) !important;
+    color: var(--bg) !important;
+}
+
+/* ── alerts ─────────────────────────────── */
+.alert {
+    background: var(--panel);
+    border: 1px dashed;
+    border-radius: 6px;
+}
+.alert::before { content: '> '; opacity: 0.7; }
+.alert-danger { color: var(--red); border-color: var(--red); background: var(--panel); }
+.alert-success { color: var(--green); border-color: var(--green); background: var(--panel); }
+
+/* ── badges ─────────────────────────────── */
+.badge {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    text-shadow: none;
+    border-radius: 3px;
+    padding: 5px 7px;
+}
+.badge.text-bg-primary, .badge.text-bg-success {
+    background: var(--green) !important;
+    color: var(--bg) !important;
+}
+.badge.text-bg-warning {
+    background: var(--amber) !important;
+    color: var(--bg) !important;
+}
+.badge.text-bg-secondary {
+    background: transparent !important;
+    color: var(--green-dim) !important;
+    border: 1px solid var(--green-dim);
+}
