@@ -10,15 +10,15 @@
     <title>Admins - Gestao</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background: radial-gradient(circle at top, #f5f7ff 0%, #eef2f7 40%, #f8f9fb 100%); }
-        .brand { letter-spacing: 0.08em; font-weight: 700; }
-    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+    <link href="/css/crt.css" rel="stylesheet">
 </head>
 <body>
 <nav class="navbar navbar-expand-lg bg-white border-bottom shadow-sm">
     <div class="container">
-        <span class="navbar-brand brand text-uppercase text-primary">Gestao</span>
+        <a class="navbar-brand" href="/">Diogenes</a>
         <div class="navbar-nav">
             <a class="nav-link" href="/?route=jokes">Piadas</a>
             <a class="nav-link active" aria-current="page" href="/?route=admins">Admins</a>

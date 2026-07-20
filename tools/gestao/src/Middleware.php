@@ -16,13 +16,13 @@ final class Middleware
     {
         $phone = $_SESSION['admin_phone'] ?? null;
         if (!is_string($phone) || $phone === '') {
-            $this->redirect('login');
+            $this->redirectToLogin();
         }
 
         $admin = $this->admins->findByPhone($phone);
         if ($admin === null) {
             unset($_SESSION['admin_phone']);
-            $this->redirect('login');
+            $this->redirectToLogin();
         }
 
         $expire = (int) $admin['expire_password'];
@@ -34,6 +34,12 @@ final class Middleware
     private function redirect(string $route): void
     {
         header('Location: /?route=' . $route);
+        exit;
+    }
+
+    private function redirectToLogin(): void
+    {
+        header('Location: /admin');
         exit;
     }
 }

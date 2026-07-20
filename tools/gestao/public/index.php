@@ -51,16 +51,30 @@ $jokeController = new JokeController($jokesRepo);
 $systemController = new SystemController();
 $welcomeController = new WelcomeController($welcomeRepo);
 
-$route = (string) ($_GET['route'] ?? 'jokes');
+$path = rtrim((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
 
-$publicRoutes = ['login'];
+if ($path === '/admin') {
+    $route = 'admin';
+} else {
+    $route = (string) ($_GET['route'] ?? 'home');
+}
+
+if ($route === 'login') {
+    header('Location: /admin', true, 301);
+    exit;
+}
+
+$publicRoutes = ['home', 'admin'];
 
 if (!in_array($route, $publicRoutes, true)) {
     $middleware->requireAuth($route);
 }
 
 switch ($route) {
-    case 'login':
+    case 'home':
+        require __DIR__ . '/../src/Views/home.php';
+        break;
+    case 'admin':
         $authController->login();
         break;
     case 'logout':

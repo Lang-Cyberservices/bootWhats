@@ -8,17 +8,31 @@
     <title>Login - Gestao</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+    <link href="/css/crt.css" rel="stylesheet">
     <style>
-        body { background: radial-gradient(circle at top, #f5f7ff 0%, #eef2f7 40%, #f8f9fb 100%); }
-        .brand { letter-spacing: 0.08em; font-weight: 700; }
+        .brand {
+            font-family: 'Press Start 2P', monospace;
+            font-size: clamp(11px, 2.2vw, 14px);
+            color: var(--amber) !important;
+            text-shadow: 0 0 8px rgba(255, 176, 0, 0.4);
+        }
         .login-hero {
-            width: 246px;
-            height: 246px;
+            width: clamp(160px, 30vw, 220px);
+            height: clamp(160px, 30vw, 220px);
             object-fit: cover;
             border-radius: 999px;
-            border: 4px solid rgba(13, 110, 253, 0.15);
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-            background: #fff;
+            border: 3px solid var(--green-dim);
+            box-shadow: 0 0 30px var(--green-faint);
+            filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(3) brightness(0.9);
+        }
+        .back-home {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--green-dim);
+            text-decoration: none;
         }
     </style>
 </head>
@@ -28,9 +42,9 @@
         <div class="col-12 col-md-6 col-lg-5">
             <div class="text-center mb-4">
                 <img class="login-hero mb-3" src="/img/diogenes.jpg" alt="Diogenes">
-                <div class="brand text-uppercase text-primary">Gestao Diogenes</div>
-                <h1 class="h3 mt-2">Bem-vindo</h1>
-                <p class="text-secondary mb-0">Acesse sua conta de administracao</p>
+                <div class="brand text-uppercase">Gestao Diogenes</div>
+                <h1 class="h3 mt-3">Bem-vindo</h1>
+                <p class="text-secondary mb-0">> acesse sua conta de administracao_</p>
             </div>
             <div class="card shadow-sm border-0">
                 <div class="card-body p-4">
@@ -39,7 +53,7 @@
                             <?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?>
                         </div>
                     <?php endif; ?>
-                    <form method="post" action="/?route=login" class="vstack gap-3">
+                    <form method="post" action="/admin" class="vstack gap-3">
                         <div>
                             <label class="form-label">Telefone</label>
                             <input class="form-control" type="text" name="phone" required>
@@ -51,6 +65,9 @@
                         <button class="btn btn-primary w-100" type="submit">Entrar</button>
                     </form>
                 </div>
+            </div>
+            <div class="text-center">
+                <a class="back-home" href="/">[ &lt; voltar para a home ]</a>
             </div>
         </div>
     </div>

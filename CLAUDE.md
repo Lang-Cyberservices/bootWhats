@@ -17,8 +17,8 @@ docker compose up -d
 npx prisma migrate deploy      # apply migrations
 npx prisma generate            # regenerate client after schema changes
 
-# Management panel (PHP built-in server)
-php -S localhost:8080 -t tools/gestao/public
+# Management panel (PHP built-in server; router.php enables the /admin path)
+php -S localhost:8080 -t tools/gestao/public tools/gestao/public/router.php
 
 # Validate a local image against NSFW logic (returns JSON)
 node tools/validate_evidence_md5.js /path/to/image.webp
