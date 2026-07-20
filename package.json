@@ -23,7 +23,7 @@
     "nsfwjs": "^4.2.1",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.34.5",
-    "whatsapp-web.js": "^1.34.6"
+    "whatsapp-web.js": "github:lindionez/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
   },
   "devDependencies": {
     "prisma": "^7.4.2"

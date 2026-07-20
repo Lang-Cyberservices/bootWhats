@@ -101,6 +101,7 @@ class CommandHandler {
         this.diceRoller = diceRoller;
         this.client = null;
         this.getBotReadyAt = null;
+        this.userIdsCache = new Map();
     }
 
     setClient(client) {
@@ -156,6 +157,34 @@ class CommandHandler {
         return null;
     }
 
+    // Resolve um ID (@c.us ou @lid) para as duas identidades do usuario.
+    // Grupos migrados para LID listam participantes como NNNN@lid, entao
+    // comparar so o telefone deixou de funcionar.
+    async resolveUserIds(userId) {
+        const serialized = this.serializeWhatsAppId(userId);
+        if (!serialized) return null;
+
+        if (this.userIdsCache.has(serialized)) {
+            return this.userIdsCache.get(serialized);
+        }
+
+        try {
+            if (this.client) {
+                const [entry] = await this.client.getContactLidAndPhone([serialized]);
+                if (entry?.lid || entry?.pn) {
+                    const result = { lid: entry.lid || null, pn: entry.pn || null };
+                    this.userIdsCache.set(serialized, result);
+                    return result;
+                }
+            }
+        } catch (err) {
+            // Nao cacheia falha: pode ser transitoria (pagina ainda carregando).
+            console.warn('Falha ao resolver LID/telefone de', serialized, '-', err?.message || err);
+        }
+
+        return null;
+    }
+
     findParticipantIdByDigits(chat, digits) {
         if (!digits) return null;
 
@@ -168,6 +197,27 @@ class CommandHandler {
         });
 
         return this.serializeWhatsAppId(found?.id);
+    }
+
+    async findParticipantIdByDigitsLidAware(chat, idOrDigits) {
+        const raw = String(idOrDigits || '');
+        const digits = raw.replace(/\D/g, '');
+        if (!digits) return null;
+
+        const direct = this.findParticipantIdByDigits(chat, digits);
+        if (direct) return direct;
+
+        // Os digitos podem ser um telefone enquanto o grupo lista LIDs (ou vice-versa).
+        const lookupId = raw.includes('@') ? raw : `${digits}@c.us`;
+        const ids = await this.resolveUserIds(lookupId);
+        for (const candidate of [ids?.lid, ids?.pn]) {
+            const candidateDigits = String(candidate || '').replace(/\D/g, '');
+            if (!candidateDigits || candidateDigits === digits) continue;
+            const found = this.findParticipantIdByDigits(chat, candidateDigits);
+            if (found) return found;
+        }
+
+        return null;
     }
 
     async handle(msg, chat) {
@@ -397,15 +447,9 @@ class CommandHandler {
         const raw = String(args?.join(' ') || '');
         const digits = raw.replace(/\D/g, '');
         if (digits) {
-            const participants = Array.isArray(chat?.participants) ? chat.participants : [];
-            const normalize = (value) => String(value || '').replace(/\D/g, '');
-            const found = participants.find((p) => {
-                const pid = p?.id?._serialized || p?.id?.user || '';
-                const normalized = normalize(pid);
-                return normalized === digits || normalized.endsWith(digits);
-            });
-            if (found?.id?._serialized) {
-                return found.id._serialized;
+            const participantId = await this.findParticipantIdByDigitsLidAware(chat, digits);
+            if (participantId) {
+                return participantId;
             }
         }
 
@@ -432,7 +476,7 @@ class CommandHandler {
         const raw = String(args?.join(' ') || '');
         const digits = raw.replace(/\D/g, '');
         if (digits) {
-            const participantId = this.findParticipantIdByDigits(chat, digits);
+            const participantId = await this.findParticipantIdByDigitsLidAware(chat, digits);
             if (participantId) {
                 return participantId;
             }
@@ -625,7 +669,11 @@ class CommandHandler {
         }
 
         try {
-            const normalizedTargetId = this.serializeWhatsAppId(userToBan) || this.findParticipantIdByDigits(chat, String(userToBan).replace(/\D/g, ''));
+            const serializedTarget = this.serializeWhatsAppId(userToBan);
+            const targetDigits = String(serializedTarget || userToBan || '').replace(/\D/g, '');
+            // Prioriza o id como consta na lista de participantes (o grupo pode
+            // usar @lid enquanto o alvo chegou como @c.us, ou o contrario).
+            const normalizedTargetId = (await this.findParticipantIdByDigitsLidAware(chat, serializedTarget || targetDigits)) || serializedTarget;
             if (!normalizedTargetId) {
                 await msg.reply('❌ Não consegui identificar corretamente o participante para remover.');
                 return;
@@ -691,15 +739,49 @@ class CommandHandler {
         await msg.reply(text, undefined, { mentions: adminIds });
     }
 
+    // Reune todas as identidades conhecidas do autor (telefone e LID),
+    // normalizadas para digitos, ja que o autor pode chegar como @c.us ou @lid.
+    async collectAuthorIdentities(msg) {
+        const identities = new Set();
+        const add = (value) => {
+            const digits = String(value || '').replace(/\D/g, '');
+            if (digits) identities.add(digits);
+        };
+
+        const senderId = getSenderId(msg);
+        add(senderId);
+        add(msg?.author);
+
+        let contact = null;
+        try {
+            contact = await msg.getContact();
+        } catch (err) {
+            console.warn('Falha ao obter contato do autor:', err?.message || err);
+        }
+        add(contact?.id?._serialized);
+        add(contact?.number);
+
+        const ids = await this.resolveUserIds(senderId || contact?.id?._serialized);
+        add(ids?.lid);
+        add(ids?.pn);
+
+        const phoneDigits = String(ids?.pn || contact?.number || '').replace(/\D/g, '');
+        if (phoneDigits) {
+            msg._authorPhone = phoneDigits;
+        }
+
+        return identities;
+    }
+
     async isAdmin(msg, chat) {
-        const author = await msg.getContact();
-        const authorKey = author.number;
-        const groupParticipants = chat.participants;
-        const normalize = (id) => String(id || '').replace(/\D/g, '');
-        msg._authorPhone = authorKey;
-        return groupParticipants.some((participant) => {
-            const participantKey = normalize(participant?.id?._serialized || participant?.id?.user);
-            return participantKey && participantKey === authorKey && (participant.isAdmin || participant.isSuperAdmin);
+        const identities = await this.collectAuthorIdentities(msg);
+        if (!identities.size) return false;
+
+        const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+        return participants.some((participant) => {
+            if (!participant?.isAdmin && !participant?.isSuperAdmin) return false;
+            const participantKey = String(participant?.id?._serialized || participant?.id?.user || '').replace(/\D/g, '');
+            return participantKey && identities.has(participantKey);
         });
     }
 
@@ -707,9 +789,24 @@ class CommandHandler {
         if (msg._authorPhone) {
             return msg._authorPhone;
         }
-        const author = await msg.getContact();
-        msg._authorPhone = author.number;
-        return msg._authorPhone
+
+        const senderId = getSenderId(msg);
+        const ids = await this.resolveUserIds(senderId);
+        let phone = String(ids?.pn || '').replace(/\D/g, '');
+
+        if (!phone) {
+            try {
+                const author = await msg.getContact();
+                phone = String(author?.number || '').replace(/\D/g, '');
+            } catch (err) {
+                console.warn('Falha ao obter contato do autor:', err?.message || err);
+            }
+        }
+
+        if (phone) {
+            msg._authorPhone = phone;
+        }
+        return phone || null;
     }
 
     async fetchGNewsArticles() {
