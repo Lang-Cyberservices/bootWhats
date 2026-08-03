@@ -95,10 +95,11 @@ function normalizeCommandText(value) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
+        this.forcaGame = forcaGame;
         this.client = null;
         this.getBotReadyAt = null;
         this.userIdsCache = new Map();
@@ -233,7 +234,7 @@ class CommandHandler {
             : args;
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d', '/definir', '/filme', '/forca' ];
         const isKnown = knownCommands.includes(canonicalCommand);
         if (isKnown && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
@@ -321,6 +322,10 @@ class CommandHandler {
             return this.handleCheck(msg, chat, args);
         }
 
+        if (command === '/definir') {
+            return this.handleDefinir(msg, args);
+        }
+
         if (command === '/noticias' || command === '/news') {
             return this.handleNoticiasCommand(msg, this.client);
         }
@@ -335,6 +340,14 @@ class CommandHandler {
 
         if (command === '/sorteio') {
             return this.handleSorteio(msg, chat);
+        }
+
+        if (command === '/filme') {
+            return this.handleFilme(msg, chat, args);
+        }
+
+        if (command === '/forca') {
+            return this.handleForca(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -836,6 +849,114 @@ class CommandHandler {
         } catch (err) {
             console.error(err)
             return { error: 'network_error' };
+        }
+    }
+
+    async fetchMovieResults(query) {
+        const apiKey = String(process.env.THEMOVIEDB_API || '').trim();
+        if (!apiKey) {
+            return { error: 'missing_key' };
+        }
+
+        const endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(apiKey)}&language=pt-BR&query=${encodeURIComponent(query)}`;
+        try {
+            const res = await fetch(endpoint, { method: 'GET' });
+            if (!res.ok) {
+                console.error('Erro HTTP ao buscar filmes:', res.status);
+                return { error: 'http_error' };
+            }
+            const data = await res.json();
+            const results = Array.isArray(data?.results) ? data.results : [];
+            return { results };
+        } catch (err) {
+            console.error('Erro de rede ao buscar filmes:', err);
+            return { error: 'network_error' };
+        }
+    }
+
+    async handleFilme(msg, chat, args) {
+        const query = String(args?.join(' ') || '').trim();
+        if (!query) {
+            await msg.reply('🎬 Use */filme [nome do filme]*. Ex: /filme matrix');
+            return;
+        }
+
+        try {
+            const { results, error } = await this.fetchMovieResults(query);
+
+            if (error === 'missing_key') {
+                console.warn('THEMOVIEDB_API não configurada.');
+                await msg.reply('❌ Busca de filmes indisponível no momento (configuração ausente).');
+                return;
+            }
+
+            if (error) {
+                await msg.reply('❌ Não consegui buscar filmes agora.');
+                return;
+            }
+
+            if (!results || results.length === 0) {
+                await msg.reply(`🔍 Nenhum filme encontrado para "${query}".`);
+                return;
+            }
+
+            const topResults = results.slice(0, 3);
+
+            if (results.length > 3) {
+                await msg.reply(`🔍 Achei ${results.length} filmes para "${query}"... vou mostrar os 3 primeiros.`);
+            }
+
+            for (const movie of topResults) {
+                const title = String(movie?.title || movie?.original_title || 'Sem título').trim();
+                const originalTitle = String(movie?.original_title || '').trim();
+                const year = String(movie?.release_date || '').slice(0, 4);
+                const overview = this.sanitizeDescription(movie?.overview, 900) || 'Sem sinopse disponível.';
+
+                const yearPart = /^\d{4}$/.test(year) ? ` (${year})` : '';
+                const originalPart = originalTitle && originalTitle !== title ? ` (_${originalTitle}_)` : '';
+                const lines = [`🎬 *${title}*${yearPart}${originalPart}`, '', overview];
+                const caption = lines.join('\n');
+
+                const imagePath = movie?.backdrop_path || movie?.poster_path;
+                let media = null;
+                if (imagePath) {
+                    const size = movie?.backdrop_path ? 'w780' : 'w500';
+                    const imageUrl = `https://image.tmdb.org/t/p/${size}${imagePath}`;
+                    try {
+                        media = await MessageMedia.fromUrl(imageUrl, { unsafeMime: true });
+                    } catch (err) {
+                        console.error('Erro ao baixar capa do filme:', err?.message || err);
+                        media = null;
+                    }
+                }
+
+                try {
+                    if (media) {
+                        await chat.sendMessage(media, { caption });
+                    } else {
+                        await msg.reply(caption);
+                    }
+                } catch (err) {
+                    console.error('Erro ao enviar resultado de filme:', err?.message || err);
+                }
+            }
+        } catch (err) {
+            console.error('Erro no /filme:', err?.message || err);
+            await msg.reply('❌ Não consegui buscar filmes agora.');
+        }
+    }
+
+    async handleForca(msg, chat, args) {
+        if (!this.forcaGame) {
+            await msg.reply('❌ O jogo da forca ainda não está disponível.');
+            return;
+        }
+
+        try {
+            await this.forcaGame.startGame(msg, chat, args);
+        } catch (err) {
+            console.error('Erro no /forca:', err?.message || err);
+            await msg.reply('❌ Não consegui iniciar o jogo da forca agora.');
         }
     }
 
@@ -1566,7 +1687,7 @@ class CommandHandler {
                     ? 'Top 5 do mês'
                     : 'Top 5 gerais';
 
-        const text = [
+        const lines = [
             `📊 *${title}*`,
             '',
             '🏆 *Quem mais fala:*',
@@ -1574,9 +1695,36 @@ class CommandHandler {
             '',
             '⚡ *Quem mais me usa:*',
             ...fmt(topCommands, 'commandsCount')
-        ].join('\n');
+        ];
 
-        await msg.reply(text);
+        if (!mode) {
+            try {
+                const topGameScores = await prisma.gameScore.findMany({
+                    where: { chatId: chat?.id?._serialized, gameType: 'forca' },
+                    orderBy: { totalPoints: 'desc' },
+                    take: 5
+                });
+
+                if (topGameScores.length) {
+                    lines.push('', '🎮 *Forca — pontuação:*');
+                    for (const [i, score] of topGameScores.entries()) {
+                        let label = labelById.get(score.authorId);
+                        if (!label && this.client) {
+                            try {
+                                const contact = await this.client.getContactById(score.authorId);
+                                label = contact?.pushname || contact?.name || contact?.number || null;
+                            } catch (_) {}
+                        }
+                        label = label || String(score.authorId).split('@')[0];
+                        lines.push(`${i + 1}. ${label} — ${score.totalPoints} pontos (${score.wins} vitórias)`);
+                    }
+                }
+            } catch (err) {
+                console.warn('Falha ao buscar pontuação de jogos para /rank:', err?.message || err);
+            }
+        }
+
+        await msg.reply(lines.join('\n'));
     }
 
     async handleSobre(msg, _chat) {
@@ -1644,57 +1792,7 @@ _versão: 3.1.0_`;
     }
 
     async handleAjuda(msg, _chat) {
-        const text =
-`📖 *Lista de comandos disponíveis*
-
-- 🔨 */ban*
-  Apenas administradores. Use respondendo uma mensagem ou com */ban @usuario* para remover o usuário do grupo.
-
-- 🚫 */proibir*
-  Apenas administradores. Responda uma imagem ou figurinha com /proibir para bloquear o conteúdo.
-
-- 🔮 */oraculo*
-  Consulta o oráculo místico e retorna sua previsão da semana.
-
-- ✨ */horoscopo*, */horóscopo* ou */signo*
-  Sem parâmetro, usa seu signo cadastrado e retorna o horóscopo do dia. Com o comando seguido de *[signo]* em português, cadastra/atualiza seu signo e retorna a previsão do dia.
-
-- 🎲 */d*, */d6*, */2d6*, */3x1d20*
-  Faz rolagens de RPG sem espaços. Aceita múltiplos blocos, filtros *h/l* e modificador final. Exemplos: */d 2d6+1d4*, */4d6h3*, */2x2d6h1+2*.
-
-- 😂 */piada*
-  Envia uma piada aleatória do bot.
-
-- 🎱 */pergunta*, */bola8* ou */8ball*
-  Responde sua pergunta com os poderes  da bola 8.
-
-- 🗳️ */sorteio*
-  Respondendo uma enquete, sorteia alguém que votou nela. Sem enquete, sorteia um participante do grupo.
-
-- 🖼️ */sticker*
-  Responda uma imagem/GIF com /sticker para o bot transformar em figurinha.
-
-- 📊 */rank*
-  Exibe top 5 mensagens e comandos. Opcional: 'diario', 'semanal' ou 'mensal'.
-
-- 🗞️ */noticias* ou */news*
-  Mostra até 5 notícias principais do dia.
-
-- 💱 */cotacao*
-  Mostra cotações em BRL. Opções: 'dollar', 'dollar canadense', 'yen', 'euro', 'libra', 'yuan/renminbi' e 'bitcoin'. Sem parâmetro, retorna todas.
-
-- 🕵️ */check*
-  Mostra estatísticas de um usuário mencionado: mensagens (hoje/semana/mês/geral), imagens removidas e uso de comandos.
-
-- 📚 */books* ou */livros*
-  Exibe links ativos da biblioteca virtual, o top de livros da última segunda-feira e a recomendação mais recente do Dio.
-
-- ℹ️ */sobre*
-  Mostra um resumo sobre o bot e quem desenvolveu.
-
-- ❓ */ajuda ou /help*
-  Exibe esta lista de comandos.`;
-
+        const text = '📖 Para ver a lista completa de comandos, acesse: https://www.diogenes.ia.br';
         await msg.reply(text);
     }
 
@@ -1890,6 +1988,39 @@ _versão: 3.1.0_`;
         } catch (err) {
             console.error('Erro ao buscar piada:', err);
             await msg.reply('❌ Nem sempre a graça obedece ao clique. Não consegui buscar uma piada agora, tente novamente em alguns instantes.');
+        }
+    }
+
+    async handleDefinir(msg, args) {
+        const word = String(args?.join(' ') || '').trim().toLowerCase();
+
+        if (!word) {
+            await msg.reply('❓ Use /definir [palavra] para ver a definição. Ex.: /definir casa');
+            return;
+        }
+
+        try {
+            const entry = await prisma.dictionary.findUnique({ where: { word } });
+
+            if (!entry) {
+                await msg.reply(`🔍 Não encontrei *${word}* no dicionário.`);
+                return;
+            }
+
+            const sections = [
+                ['Substantivo', entry.nounMeaning],
+                ['Verbo', entry.verbMeaning],
+                ['Adjetivo', entry.adjectiveMeaning],
+                ['Advérbio', entry.adverbMeaning]
+            ]
+                .filter(([, meaning]) => meaning)
+                .map(([label, meaning]) => `*${label}:* ${meaning}`);
+
+            const text = `📖 *${entry.word}* (${entry.charactersCount} letras)\n\n${sections.join('\n\n')}`;
+            await msg.reply(text);
+        } catch (err) {
+            console.error('Erro no /definir:', err);
+            await msg.reply('❌ Não consegui buscar essa palavra agora, tente novamente em instantes.');
         }
     }
 

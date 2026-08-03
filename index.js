@@ -15,6 +15,7 @@ const { connectDatabase } = require('./services/database');
 const StatsCounter = require('./services/StatsCounter');
 const { getSenderId } = require('./services/messageUtils');
 const LlamaResponder = require('./services/LlamaResponder');
+const ForcaGame = require('./services/games/forca');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
@@ -39,7 +40,8 @@ const oracleService = new OracleService(auditLogger);
 const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
-const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller);
+const forcaGame = new ForcaGame();
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame);
 commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
@@ -120,6 +122,8 @@ async function init() {
         maxBuffer: Number(process.env.STATS_MAX_BUFFER) || undefined
     });
 
+    await forcaGame.loadActiveGames();
+
     try {
         model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
         imageAnalyzer = new ImageAnalyzer(model, {
@@ -158,6 +162,7 @@ const client = new Client({
     }
 });
 commandHandler.setClient(client);
+forcaGame.setClient(client);
 
 // O WhatsApp Web é um PWA: com sessão existente, o service worker serve a
 // página do próprio cache e a versão fixada em `webVersion` é ignorada.
@@ -289,6 +294,9 @@ client.on('message', async (msg) => {
     // await messageFilter.handle(msg, chat);
     await imageAnalyzer?.handle(msg, chat);
     await commandHandler.handle(msg, chat);
+    if (!isCommand) {
+        await forcaGame.handleMessage(msg, chat);
+    }
     await llamaResponder.handleMessage(msg, chat);
 });
 

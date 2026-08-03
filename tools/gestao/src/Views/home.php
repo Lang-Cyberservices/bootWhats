@@ -614,6 +614,24 @@
             </button>
 
             <button class="cmd" type="button">
+                <span class="name">📖 /definir</span>
+                <span class="desc">Busca a definição de uma palavra.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/definir [palavra]</code> — ex.: <code>/definir casa</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Procura a palavra no dicionário do bot e retorna os significados cadastrados como <strong>substantivo</strong>, <strong>verbo</strong>, <strong>adjetivo</strong> e <strong>advérbio</strong> (só aparecem os que existirem para a palavra).</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/definir casa</div><div class="out">📖 definição de "casa"</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
                 <span class="name">📚 /books · /livros</span>
                 <span class="desc">Biblioteca virtual e recomendações.</span>
                 <span class="more">[ + detalhes ]</span>
@@ -627,6 +645,43 @@
                     <h3>Exemplos</h3>
                     <div class="examples">
                         <div class="ex"><div class="in">/livros</div><div class="out">📚 links da biblioteca + top + recomendação do Dio</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎬 /filme</span>
+                <span class="desc">Busca filmes no TheMovieDB.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/filme [nome do filme]</code> — ex.: <code>/filme matrix</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Busca o filme no <strong>TheMovieDB</strong> e retorna até <strong>3 resultados</strong>, cada um com a <strong>capa</strong>, o <strong>ano de lançamento</strong>, o <strong>título original</strong> e a <strong>sinopse</strong>.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/filme matrix</div><div class="out">🎬 até 3 filmes com capa, título original e sinopse</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎯 /forca</span>
+                <span class="desc">Jogo da forca em grupo, com dicionário ou filmes.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/forca</code> — inicia uma partida com palavra sorteada do dicionário.</li>
+                        <li><code>/forca filmes</code> — inicia uma partida com filme sorteado da base do bot.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/forca</div><div class="out">📖 Jogo da Forca (Dicionário) — imagem da forca + palavra mascarada</div></div>
                     </div>
                 </div>
             </button>

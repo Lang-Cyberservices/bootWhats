@@ -36,15 +36,15 @@ model CommandLog {
 }
 
 model OraclePrediction {
-  id        Int      @id @default(autoincrement())
-  phone     String
-  weekKey   String
-  message   String   @db.Text
-  luckType  String   @default("SORTE")
-  theme     String?  @db.VarChar(191)
-  luckyNumber Int    @default(0)
-  animalName String?
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  phone       String
+  weekKey     String
+  message     String   @db.Text
+  luckType    String   @default("SORTE")
+  theme       String?  @db.VarChar(191)
+  luckyNumber Int      @default(0)
+  animalName  String?
+  createdAt   DateTime @default(now())
 
   @@unique([phone, weekKey])
   @@map("oracle_predictions")
@@ -118,8 +118,8 @@ model PhilosopherProtector {
 }
 
 model Joke {
-  id    Int    @id @default(autoincrement())
-  text  String @db.Text
+  id   Int    @id @default(autoincrement())
+  text String @db.Text
 
   @@map("jokes")
 }
@@ -135,13 +135,13 @@ model Admin {
 
 model WelcomeConfig {
   id              Int      @id @default(autoincrement())
-  chatId           String   @unique
-  message          String   @db.Text
-  peopleToTrigger  Int      @default(1)
-  counter          Int      @default(0)
-  enabled          Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  chatId          String   @unique
+  message         String   @db.Text
+  peopleToTrigger Int      @default(1)
+  counter         Int      @default(0)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("welcome_configs")
 }
@@ -191,13 +191,90 @@ model UserHoroscope {
 }
 
 model DailyHoroscope {
-  id         Int      @id @default(autoincrement())
-  date       DateTime @db.Date
-  sign       String   @db.VarChar(64)
-  horoscope  String   @db.Text
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  date      DateTime @db.Date
+  sign      String   @db.VarChar(64)
+  horoscope String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([date, sign])
   @@map("daily_horoscopes")
+}
+
+model Dictionary {
+  id               Int      @id @default(autoincrement())
+  word             String   @unique @db.VarChar(255)
+  charactersCount  Int
+  nounMeaning      String?  @db.Text
+  verbMeaning      String?  @db.Text
+  adjectiveMeaning String?  @db.Text
+  adverbMeaning    String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("dictionary")
+}
+
+model Movie {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique @db.VarChar(255)
+  themoviedbId Int?     @map("themoviedb_id")
+  createdAt    DateTime @default(now())
+
+  @@map("movies")
+}
+
+model GameForca {
+  id                    Int       @id @default(autoincrement())
+  chatId                String    @db.VarChar(255)
+  mode                  String    @db.VarChar(50)
+  status                String    @db.VarChar(20)
+  answer                String    @db.VarChar(255)
+  answerRef             String?   @db.VarChar(255)
+  guessedLetters        String    @db.Text
+  wrongLetters          String    @db.Text
+  wrongGuesses          String    @db.Text
+  errorsCount           Int       @default(0)
+  lastLetterAuthorId    String?   @db.VarChar(255)
+  currentRoundMessageId String?   @db.VarChar(255)
+  roundMessageIds       String    @db.Text
+  startedBy             String    @db.VarChar(255)
+  winnerId              String?   @db.VarChar(255)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  finishedAt            DateTime?
+
+  participants GameForcaParticipant[]
+
+  @@map("game_forca")
+}
+
+model GameForcaParticipant {
+  id           Int      @id @default(autoincrement())
+  gameId       Int
+  authorId     String   @db.VarChar(255)
+  pointsEarned Int      @default(0)
+  eliminated   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  game GameForca @relation(fields: [gameId], references: [id])
+
+  @@unique([gameId, authorId])
+  @@map("game_forca_participants")
+}
+
+model GameScore {
+  id            Int      @id @default(autoincrement())
+  chatId        String   @db.VarChar(255)
+  authorId      String   @db.VarChar(255)
+  gameType      String   @db.VarChar(50)
+  totalPoints   Int      @default(0)
+  wins          Int      @default(0)
+  matchesPlayed Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([chatId, authorId, gameType])
+  @@map("game_scores")
 }
