@@ -265,6 +265,18 @@ model GameForcaParticipant {
   @@map("game_forca_participants")
 }
 
+model Country {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(255)
+  sigla       String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  flag        String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("countries")
+}
+
 model GameScore {
   id            Int      @id @default(autoincrement())
   chatId        String   @db.VarChar(255)

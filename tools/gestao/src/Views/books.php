@@ -32,6 +32,7 @@
             <a class="nav-link" href="/?route=admins">Admins</a>
             <a class="nav-link active" aria-current="page" href="/?route=books">Livros</a>
             <a class="nav-link" href="/?route=welcome">Boas vindas</a>
+            <a class="nav-link" href="/?route=countries">Paises</a>
             <a class="nav-link" href="/?route=system">Sistema</a>
             <a class="nav-link" href="/?route=change-password">Trocar senha</a>
             <a class="nav-link text-danger" href="/?route=logout">Sair</a>

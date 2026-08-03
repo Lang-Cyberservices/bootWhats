@@ -8,12 +8,14 @@ use Gestao\Middleware;
 use Gestao\Controllers\AuthController;
 use Gestao\Controllers\AdminController;
 use Gestao\Controllers\BooksController;
+use Gestao\Controllers\CountryController;
 use Gestao\Controllers\JokeController;
 use Gestao\Controllers\SystemController;
 use Gestao\Controllers\WelcomeController;
 use Gestao\Repositories\AdminRepository;
 use Gestao\Repositories\BookRecommendationRepository;
 use Gestao\Repositories\BooksDownloadRepository;
+use Gestao\Repositories\CountryRepository;
 use Gestao\Repositories\JokeRepository;
 use Gestao\Repositories\WelcomeConfigRepository;
 
@@ -24,11 +26,13 @@ require __DIR__ . '/../src/Middleware.php';
 require __DIR__ . '/../src/Repositories/AdminRepository.php';
 require __DIR__ . '/../src/Repositories/BooksDownloadRepository.php';
 require __DIR__ . '/../src/Repositories/BookRecommendationRepository.php';
+require __DIR__ . '/../src/Repositories/CountryRepository.php';
 require __DIR__ . '/../src/Repositories/JokeRepository.php';
 require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
 require __DIR__ . '/../src/Controllers/BooksController.php';
+require __DIR__ . '/../src/Controllers/CountryController.php';
 require __DIR__ . '/../src/Controllers/JokeController.php';
 require __DIR__ . '/../src/Controllers/SystemController.php';
 require __DIR__ . '/../src/Controllers/WelcomeController.php';
@@ -41,6 +45,7 @@ $downloadsRepo = new BooksDownloadRepository($db->pdo());
 $recommendationsRepo = new BookRecommendationRepository($db->pdo());
 $jokesRepo = new JokeRepository($db->pdo());
 $welcomeRepo = new WelcomeConfigRepository($db->pdo());
+$countriesRepo = new CountryRepository($db->pdo());
 $auth = new Auth($adminsRepo);
 $middleware = new Middleware($adminsRepo);
 
@@ -50,6 +55,7 @@ $booksController = new BooksController($downloadsRepo, $recommendationsRepo);
 $jokeController = new JokeController($jokesRepo);
 $systemController = new SystemController();
 $welcomeController = new WelcomeController($welcomeRepo);
+$countryController = new CountryController($countriesRepo);
 
 $path = rtrim((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
 
@@ -91,6 +97,9 @@ switch ($route) {
         break;
     case 'welcome':
         $welcomeController->index();
+        break;
+    case 'countries':
+        $countryController->index();
         break;
     case 'system':
         $systemController->index();
