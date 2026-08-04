@@ -1,5 +1,6 @@
 const { getSenderId } = require('./messageUtils');
 const { siglaToFlagEmoji, extractSiglaFromFlagEmoji } = require('./countryUtils');
+const { KNOWN_COMMANDS, resolveCommandName, normalizeCommandText } = require('./commandRegistry');
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
@@ -87,20 +88,13 @@ function isRateLimited(authorId) {
     return recent.length > MAX_COMMANDS_PER_MINUTE;
 }
 
-function normalizeCommandText(value) {
-    return String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
-}
-
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
         this.forcaGame = forcaGame;
+        this.blockedCommands = blockedCommands;
         this.client = null;
         this.getBotReadyAt = null;
         this.userIdsCache = new Map();
@@ -235,10 +229,18 @@ class CommandHandler {
             : args;
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d', '/definir', '/filme', '/forca', '/pais' ];
-        const isKnown = knownCommands.includes(canonicalCommand);
-        if (isKnown && isRateLimited(authorId)) {
+        const definition = resolveCommandName(canonicalCommand);
+        const isKnown = KNOWN_COMMANDS.includes(canonicalCommand);
+        // /fechar e /abrir sao isentos do flood: sao restritos a administradores e
+        // fechar varios comandos seguidos estouraria a cota de 3 comandos por 2 minutos.
+        if (isKnown && !definition?.protected && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
+            return;
+        }
+
+        const chatId = chat?.id?._serialized || chat?.id?.user || '';
+        if (definition && !definition.protected && this.blockedCommands?.isBlocked(chatId, definition.name)) {
+            await msg.reply('❌ Comando desativado.');
             return;
         }
 
@@ -263,6 +265,10 @@ class CommandHandler {
 
         if (command === '/ban') {
             return this.handleBan(msg, chat);
+        }
+
+        if (command === '/fechar' || command === '/abrir') {
+            return this.handleToggleCommand(msg, chat, args, command === '/fechar');
         }
 
         if (command === '/adm') {
@@ -728,6 +734,78 @@ class CommandHandler {
         } catch (err) {
             console.error(err);
             await msg.reply('❌ A lanterna falhou em encontrar o caminho da saída. O estorvo permanece entre nós, como uma mancha que não sai com água. Verificai se tendes o poder para tal ato ou se o destino decidiu que ainda deveis suportar a presença deste bípede sem penas.');
+        }
+    }
+
+    // /fechar <comando> e /abrir <comando>: liga e desliga comandos por grupo.
+    async handleToggleCommand(msg, chat, args, isClosing) {
+        const verb = isClosing ? 'fechar' : 'abrir';
+
+        if (!this.blockedCommands || this.blockedCommands.disabled) {
+            await msg.reply('❌ O controle de comandos ainda não está disponível.');
+            return;
+        }
+
+        if (!(await this.isAdmin(msg, chat))) {
+            await msg.reply('❌ Nem todos que sonham com poder estão prontos para exercê-lo. Apenas administradores podem usar este comando.');
+            return;
+        }
+
+        const chatId = chat?.id?._serialized || chat?.id?.user || '';
+        const target = String(args?.[0] || '').trim();
+
+        if (!target) {
+            const blocked = this.blockedCommands.list(chatId);
+            const header = blocked.length
+                ? `🔒 Comandos fechados neste grupo: ${blocked.map((name) => `/${name}`).join(', ')}`
+                : '✅ Nenhum comando fechado neste grupo.';
+            await msg.reply(`${header}\n\nUse: /${verb} <comando>`);
+            return;
+        }
+
+        const definition = resolveCommandName(target);
+        if (!definition) {
+            await msg.reply(`❌ Comando desconhecido: ${target}.`);
+            return;
+        }
+
+        if (definition.protected) {
+            await msg.reply(`❌ O comando /${definition.name} não pode ser fechado.`);
+            return;
+        }
+
+        const otherAliases = definition.aliases.filter((alias) => alias !== `/${definition.name}`);
+        const aliasNote = otherAliases.length ? ` (também: ${otherAliases.join(', ')})` : '';
+
+        try {
+            const changed = isClosing
+                ? await this.blockedCommands.block(chatId, definition.name, {
+                    blockedBy: getSenderId(msg),
+                    blockedByPhone: await this.getFromNumber(msg)
+                })
+                : await this.blockedCommands.unblock(chatId, definition.name);
+
+            if (!changed) {
+                const state = isClosing ? 'fechado' : 'aberto';
+                await msg.reply(`⚠️ O comando /${definition.name} já está ${state} neste grupo.`);
+                return;
+            }
+
+            await msg.reply(isClosing
+                ? `🔒 Comando /${definition.name} fechado neste grupo${aliasNote}.`
+                : `🔓 Comando /${definition.name} reaberto neste grupo${aliasNote}.`);
+
+            await this.auditLogger?.log(isClosing ? 'COMMAND_CLOSED' : 'COMMAND_OPENED', {
+                chatId,
+                phone: await this.getFromNumber(msg),
+                authorId: getSenderId(msg),
+                messageId: msg.id?._serialized || msg.id?.id,
+                content: msg.body,
+                details: { command: definition.name }
+            });
+        } catch (err) {
+            console.error(`Erro ao ${verb} comando:`, err?.message || err);
+            await msg.reply(`❌ Não consegui ${verb} o comando /${definition.name}. Tente novamente mais tarde.`);
         }
     }
 

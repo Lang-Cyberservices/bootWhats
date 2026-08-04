@@ -425,11 +425,34 @@ class ForcaGame {
             .join(' ');
     }
 
+    // Descreve a estrutura da resposta ("2 palavras, 5 e 6 letras"). Um grupo é uma
+    // sequência de letras; qualquer run de não-letra (espaço, hífen, pontuação) separa
+    // grupos — o mesmo critério que o buildMaskLine usa para decidir o que vira "_".
+    buildStructureLine(answer) {
+        const sizes = String(answer || '')
+            .split(/[^\p{L}]+/u)
+            .filter(Boolean)
+            .map((word) => Array.from(word).length);
+
+        if (!sizes.length) return '';
+
+        if (sizes.length === 1) {
+            return `1 palavra, ${sizes[0]} ${sizes[0] === 1 ? 'letra' : 'letras'}`;
+        }
+
+        const last = sizes[sizes.length - 1];
+        const letters = `${sizes.slice(0, -1).join(', ')} e ${last}`;
+        return `${sizes.length} palavras, ${letters} letras`;
+    }
+
     buildRoundText(game) {
         const title = MODE_TITLES[game.mode] || MODE_TITLES.dicionario;
         const maskLine = this.buildMaskLine(game.answer, game.guessedLetters);
 
         const lines = [`*${title}*`, '', maskLine];
+
+        const structureLine = this.buildStructureLine(game.answer);
+        if (structureLine) lines.push(structureLine);
 
         if (game.wrongLetters.size) {
             lines.push('', '❌ *Letras erradas:*', [...game.wrongLetters].map((l) => l.toUpperCase()).join(' '));

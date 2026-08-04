@@ -16,6 +16,7 @@ const StatsCounter = require('./services/StatsCounter');
 const { getSenderId } = require('./services/messageUtils');
 const LlamaResponder = require('./services/LlamaResponder');
 const ForcaGame = require('./services/games/forca');
+const BlockedCommands = require('./services/BlockedCommands');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
@@ -41,7 +42,8 @@ const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const forcaGame = new ForcaGame();
-const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame);
+const blockedCommands = new BlockedCommands();
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands);
 commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
@@ -123,6 +125,7 @@ async function init() {
     });
 
     await forcaGame.loadActiveGames();
+    await blockedCommands.load();
 
     try {
         model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });

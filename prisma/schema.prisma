@@ -146,6 +146,19 @@ model WelcomeConfig {
   @@map("welcome_configs")
 }
 
+model CommandBlocked {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(64)
+  chatId         String   @db.VarChar(191)
+  blockedBy      String?  @db.VarChar(191)
+  blockedByPhone String?  @db.VarChar(32)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([chatId, name])
+  @@map("commands_blocked")
+}
+
 model BookTopWeek {
   id        Int      @id @default(autoincrement())
   week      DateTime @db.Date
