@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { prisma } = require('../database');
 const { getSenderId } = require('../messageUtils');
+const { siglaToFlagEmoji } = require('../countryUtils');
 
 const MAX_ERRORS = 7;
 const DICTIONARY_MIN_LENGTH = 4;
@@ -10,6 +11,49 @@ const DICTIONARY_MAX_LENGTH = 14;
 const DICTIONARY_PICK_ATTEMPTS = 20;
 const LETTER_REGEX = /\p{L}/u;
 const ONLY_LETTERS_REGEX = /^\p{L}+$/u;
+
+// Argumento do /forca → modo. normalize() já tira acento e caixa, então
+// "advérbio" chega como "adverbio" e "país" como "pais".
+const MODE_ALIASES = {
+    filme: 'filmes', filmes: 'filmes',
+    pais: 'paises', paises: 'paises',
+    dicionario: 'dicionario', dicionarios: 'dicionario',
+    substantivo: 'substantivo', substantivos: 'substantivo',
+    verbo: 'verbo', verbos: 'verbo',
+    adjetivo: 'adjetivo', adjetivos: 'adjetivo',
+    adverbio: 'adverbio', adverbios: 'adverbio'
+};
+
+// Modo → coluna do Dictionary que precisa estar preenchida.
+const DICTIONARY_MEANING_FIELD = {
+    substantivo: 'nounMeaning',
+    verbo: 'verbMeaning',
+    adjetivo: 'adjectiveMeaning',
+    adverbio: 'adverbMeaning'
+};
+
+// Sorteados quando o /forca vem sem argumento.
+const RANDOM_MODES = ['filmes', 'paises', 'dicionario', 'substantivo', 'verbo', 'adjetivo', 'adverbio'];
+
+const MODE_TITLES = {
+    filmes: '🎬 Jogo da Forca (Filmes)',
+    paises: '🌍 Jogo da Forca (Países)',
+    dicionario: '📖 Jogo da Forca (Dicionário)',
+    substantivo: '📖 Jogo da Forca (Substantivo)',
+    verbo: '📖 Jogo da Forca (Verbo)',
+    adjetivo: '📖 Jogo da Forca (Adjetivo)',
+    adverbio: '📖 Jogo da Forca (Advérbio)'
+};
+
+const MODE_LABELS = {
+    filmes: 'filmes',
+    paises: 'países',
+    dicionario: 'dicionário',
+    substantivo: 'substantivos',
+    verbo: 'verbos',
+    adjetivo: 'adjetivos',
+    adverbio: 'advérbios'
+};
 
 function normalize(value) {
     return String(value || '')
@@ -117,7 +161,25 @@ class ForcaGame {
         }
 
         const modeArg = normalize(String(args?.[0] || ''));
-        const mode = (modeArg === 'filmes' || modeArg === 'filme') ? 'filmes' : 'dicionario';
+        let mode;
+        if (!modeArg) {
+            mode = RANDOM_MODES[Math.floor(Math.random() * RANDOM_MODES.length)];
+        } else if (MODE_ALIASES[modeArg]) {
+            mode = MODE_ALIASES[modeArg];
+        } else {
+            await msg.reply(
+                `❌ Não conheço o modo "${args[0]}".\n\n` +
+                'Use */forca* sozinho para sortear um modo, ou escolha:\n' +
+                '• /forca filmes\n' +
+                '• /forca pais\n' +
+                '• /forca dicionario\n' +
+                '• /forca substantivo\n' +
+                '• /forca verbo\n' +
+                '• /forca adjetivo\n' +
+                '• /forca advérbio'
+            );
+            return;
+        }
 
         let answer;
         let answerRef = null;
@@ -130,10 +192,18 @@ class ForcaGame {
             }
             answer = movie.name;
             answerRef = movie.themoviedbId ? String(movie.themoviedbId) : null;
+        } else if (mode === 'paises') {
+            const country = await this.pickRandomCountry();
+            if (!country) {
+                await msg.reply('❌ Não encontrei países disponíveis para jogar agora.');
+                return;
+            }
+            answer = country.name;
+            answerRef = country.sigla;
         } else {
-            const entry = await this.pickRandomDictionaryEntry();
+            const entry = await this.pickRandomDictionaryEntry(mode);
             if (!entry) {
-                await msg.reply('❌ Não encontrei palavras disponíveis para jogar agora.');
+                await msg.reply(`❌ Não encontrei ${MODE_LABELS[mode]} disponíveis para jogar agora.`);
                 return;
             }
             answer = entry.word;
@@ -170,15 +240,20 @@ class ForcaGame {
         await this.sendRound(chat, game);
     }
 
-    async pickRandomDictionaryEntry() {
+    async pickRandomDictionaryEntry(mode = 'dicionario') {
+        const field = DICTIONARY_MEANING_FIELD[mode];
         const where = {
             charactersCount: { gte: DICTIONARY_MIN_LENGTH, lte: DICTIONARY_MAX_LENGTH },
-            OR: [
-                { nounMeaning: { not: null } },
-                { verbMeaning: { not: null } },
-                { adjectiveMeaning: { not: null } },
-                { adverbMeaning: { not: null } }
-            ]
+            ...(field
+                ? { [field]: { not: null } }
+                : {
+                    OR: [
+                        { nounMeaning: { not: null } },
+                        { verbMeaning: { not: null } },
+                        { adjectiveMeaning: { not: null } },
+                        { adverbMeaning: { not: null } }
+                    ]
+                })
         };
 
         const total = await prisma.dictionary.count({ where });
@@ -203,6 +278,15 @@ class ForcaGame {
         const skip = Math.floor(Math.random() * total);
         const [movie] = await prisma.movie.findMany({ where, skip, take: 1 });
         return movie || null;
+    }
+
+    async pickRandomCountry() {
+        const total = await prisma.country.count();
+        if (!total) return null;
+
+        const skip = Math.floor(Math.random() * total);
+        const [country] = await prisma.country.findMany({ skip, take: 1 });
+        return country || null;
     }
 
     // --- Palpites ------------------------------------------------------------
@@ -342,7 +426,7 @@ class ForcaGame {
     }
 
     buildRoundText(game) {
-        const title = game.mode === 'filmes' ? '🎬 Jogo da Forca (Filmes)' : '📖 Jogo da Forca (Dicionário)';
+        const title = MODE_TITLES[game.mode] || MODE_TITLES.dicionario;
         const maskLine = this.buildMaskLine(game.answer, game.guessedLetters);
 
         const lines = [`*${title}*`, '', maskLine];
@@ -355,7 +439,9 @@ class ForcaGame {
             lines.push('', '💀 *Chutes errados:*', ...game.wrongGuesses.map((g) => `${g.label} → ${g.guess}`));
         }
 
-        const guessHint = game.mode === 'filmes' ? '• o nome completo do filme.' : '• um chute da palavra inteira.';
+        let guessHint = '• um chute da palavra inteira.';
+        if (game.mode === 'filmes') guessHint = '• o nome completo do filme.';
+        if (game.mode === 'paises') guessHint = '• o nome completo do país.';
         lines.push('', 'Todos podem jogar. Responda ESTA imagem com:', '• uma letra', 'ou', guessHint);
 
         return lines.join('\n');
@@ -462,10 +548,33 @@ class ForcaGame {
                 return;
             }
 
+            if (game.mode === 'paises') {
+                const text = await this.buildCountryInfo(game.answer, game.answerRef);
+                await chat.sendMessage(text);
+                return;
+            }
+
             const text = await this.buildDictionaryInfo(game.answer);
             await chat.sendMessage(text);
         } catch (err) {
             console.error('Erro ao enviar descrição do forca:', err?.message || err);
+        }
+    }
+
+    async buildCountryInfo(name, sigla) {
+        try {
+            const country = sigla
+                ? await prisma.country.findUnique({ where: { sigla } })
+                : await prisma.country.findFirst({ where: { name } });
+
+            if (!country) return `🌍 *${name}*\n\nDescrição indisponível.`;
+
+            const flagEmoji = siglaToFlagEmoji(country.sigla);
+            const description = this.sanitizeDescription(country.description, 1000) || 'Sem descrição disponível.';
+            return `${flagEmoji} *${country.name}* ${flagEmoji}\n\n${description}`;
+        } catch (err) {
+            console.error('Erro ao buscar descrição do país (forca):', err?.message || err);
+            return `🌍 *${name}*\n\nDescrição indisponível.`;
         }
     }
 

@@ -668,20 +668,47 @@
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">🎯 /forca</span>
-                <span class="desc">Jogo da forca em grupo, com dicionário ou filmes.</span>
+                <span class="name">🌍 /pais</span>
+                <span class="desc">Informações sobre um país.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li><code>/forca</code> — inicia uma partida com palavra sorteada do dicionário.</li>
-                        <li><code>/forca filmes</code> — inicia uma partida com filme sorteado da base do bot.</li>
+                        <li><code>/pais [nome do país]</code> — ex.: <code>/pais brasil</code>.</li>
+                        <li><code>/pais [bandeira]</code> — ex.: <code>/pais 🇧🇷</code>.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
+                    <p>Retorna a <strong>bandeira</strong>, o <strong>nome</strong> e a <strong>descrição</strong> do país. A busca por nome é parcial, então <code>/pais guin</code> já encontra um resultado; havendo vários, o bot prefere o de nome exato e, na falta dele, o primeiro em ordem alfabética. Por bandeira a busca é exata, pela sigla do país.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/forca</div><div class="out">📖 Jogo da Forca (Dicionário) — imagem da forca + palavra mascarada</div></div>
+                        <div class="ex"><div class="in">/pais brasil</div><div class="out">🇧🇷 Brasil 🇧🇷 + descrição do país</div></div>
+                        <div class="ex"><div class="in">/pais 🇵🇹</div><div class="out">🇵🇹 Portugal 🇵🇹 + descrição do país</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎯 /forca</span>
+                <span class="desc">Jogo da forca em grupo: palavras, filmes ou países.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/forca</code> — <strong>sorteia um dos modos abaixo</strong> e inicia a partida.</li>
+                        <li><code>/forca dicionario</code> — qualquer palavra do dicionário do bot.</li>
+                        <li><code>/forca filmes</code> — um filme da base do bot.</li>
+                        <li><code>/forca pais</code> — um país.</li>
+                        <li><code>/forca substantivo</code> · <code>verbo</code> · <code>adjetivo</code> · <code>advérbio</code> — uma palavra daquela classe gramatical.</li>
+                    </ul>
+                    <p>Os modos funcionam no singular ou no plural (<code>/forca pais</code> ou <code>/forca paises</code>, <code>/forca verbo</code> ou <code>/forca verbos</code>), e o acento é opcional. Um modo desconhecido não inicia partida: o bot responde com a lista de opções válidas.</p>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
+                    <p>Nos modos <strong>países</strong> e <strong>filmes</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, ou a bandeira e a descrição do país.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 7 modos e inicia a partida</div></div>
+                        <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
+                        <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
                     </div>
                 </div>
             </button>

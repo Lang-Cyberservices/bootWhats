@@ -1,4 +1,5 @@
 const { getSenderId } = require('./messageUtils');
+const { siglaToFlagEmoji, extractSiglaFromFlagEmoji } = require('./countryUtils');
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
@@ -234,7 +235,7 @@ class CommandHandler {
             : args;
 
         const authorId = getSenderId(msg);
-        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d', '/definir', '/filme', '/forca' ];
+        const knownCommands = ['/ban', '/adm', '/oraculo', '/oráculo', '/sobre', '/ajuda', '/help', '/sticker', '/piada', '/proibir', '/rank', '/noticias', '/news', '/cotacao', '/check', '/books', '/livros', '/pergunta', '/bola8', '/8ball', '/horoscopo', '/horóscopo', '/signo', '/sorteio', '/d', '/definir', '/filme', '/forca', '/pais' ];
         const isKnown = knownCommands.includes(canonicalCommand);
         if (isKnown && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
@@ -348,6 +349,10 @@ class CommandHandler {
 
         if (command === '/forca') {
             return this.handleForca(msg, chat, args);
+        }
+
+        if (command === '/pais') {
+            return this.handlePais(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -943,6 +948,44 @@ class CommandHandler {
         } catch (err) {
             console.error('Erro no /filme:', err?.message || err);
             await msg.reply('❌ Não consegui buscar filmes agora.');
+        }
+    }
+
+    async handlePais(msg, chat, args) {
+        const query = String(args?.join(' ') || '').trim();
+        if (!query) {
+            await msg.reply('🌍 Use */pais [nome do país ou bandeira]*. Ex: /pais brasil ou /pais 🇧🇷');
+            return;
+        }
+
+        try {
+            const sigla = extractSiglaFromFlagEmoji(query);
+
+            let country = null;
+            if (sigla) {
+                country = await prisma.country.findUnique({ where: { sigla } });
+            } else {
+                const matches = await prisma.country.findMany({
+                    where: { name: { contains: query } },
+                    orderBy: { name: 'asc' },
+                    take: 5
+                });
+                country = matches.find((c) => c.name.toLowerCase() === query.toLowerCase()) || matches[0] || null;
+            }
+
+            if (!country) {
+                await msg.reply(`🔍 Não encontrei nenhum país para "${query}".`);
+                return;
+            }
+
+            const flagEmoji = siglaToFlagEmoji(country.sigla);
+            const description = this.sanitizeDescription(country.description, 1000) || 'Sem descrição disponível.';
+            const text = `${flagEmoji} *${country.name}* ${flagEmoji}\n\n${description}`;
+
+            await msg.reply(text);
+        } catch (err) {
+            console.error('Erro no /pais:', err?.message || err);
+            await msg.reply('❌ Não consegui buscar o país agora.');
         }
     }
 
