@@ -28,6 +28,7 @@ const COMMAND_DEFINITIONS = [
     { name: 'definir', aliases: ['/definir'] },
     { name: 'filme', aliases: ['/filme'] },
     { name: 'forca', aliases: ['/forca'] },
+    { name: 'xadrez', aliases: ['/xadrez', '/chess'] },
     { name: 'pais', aliases: ['/pais'] },
     { name: 'fechar', aliases: ['/fechar'], protected: true },
     { name: 'abrir', aliases: ['/abrir'], protected: true }

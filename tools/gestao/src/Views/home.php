@@ -546,13 +546,16 @@
                     <ul>
                         <li><code>/rank</code> — ranking geral.</li>
                         <li><code>/rank diario</code>, <code>/rank semanal</code> ou <code>/rank mensal</code> — ranking do período.</li>
+                        <li><code>/rank xadrez</code> — ranking só do xadrez, com vitórias, empates e derrotas.</li>
                     </ul>
                     <h3>Detalhes</h3>
                     <p>Mostra dois top 5: <strong>quem mais fala</strong> (mensagens) e <strong>quem mais usa o bot</strong> (comandos).</p>
+                    <p>No ranking geral aparece também o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca e no xadrez, com o total de vitórias, empates e derrotas.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo</div></div>
+                        <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo + 🎮 placar de jogos</div></div>
                         <div class="ex"><div class="in">/rank semanal</div><div class="out">📊 top 5 da semana</div></div>
+                        <div class="ex"><div class="in">/rank xadrez</div><div class="out">♟️ top 5 do xadrez — 75 pontos (2V 1E 1D)</div></div>
                     </div>
                 </div>
             </button>
@@ -709,6 +712,32 @@
                         <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 7 modos e inicia a partida</div></div>
                         <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
                         <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">♟️ /xadrez · /chess</span>
+                <span class="desc">Partida de xadrez 1x1 no grupo, com tabuleiro em imagem.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/xadrez</code> — abre uma partida e espera um adversário.</li>
+                        <li>Responder a imagem com <code>xadrez</code> — entra como o segundo jogador.</li>
+                        <li>Responder a imagem com <code>e2 e4</code> — faz o lance (também vale <code>e2e4</code>, <code>e2-e4</code> ou a notação <code>Nf3</code>).</li>
+                        <li>Responder a imagem com <code>desistir</code> — entrega a partida.</li>
+                        <li>Responder a imagem com <code>empate</code> — propõe empate; o adversário responde <code>sim</code> ou <code>não</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez. Quando o segundo jogador entra, o bot <strong>sorteia quem joga com as brancas</strong> (quem começa) e manda o tabuleiro marcando de quem é a vez. A cada lance sai um tabuleiro novo, com as letras e números em volta, o último lance destacado em amarelo e o rei destacado em vermelho quando está em <strong>xeque</strong>. Lance inválido, fora da vez ou de quem não está jogando não altera a partida.</p>
+                    <p>A partida termina por xeque-mate, desistência, empate aceito ou empate automático (afogamento, material insuficiente, repetição tripla e regra dos 50 lances). <strong>Vitória vale 30 pontos e empate 15</strong>, somando no placar de jogos do <code>/rank</code> junto com a forca. Para não virar farm de pontos, partidas com <strong>menos de 10 lances não pontuam</strong>.</p>
+                    <p>Uma partida sem adversário expira em 15 minutos, e uma partida parada há mais de 24 horas é encerrada sem pontos. A partida sobrevive a reinícios do bot.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/xadrez</div><div class="out">♟️ tabuleiro inicial — Jogador 2: aguardando...</div></div>
+                        <div class="ex"><div class="in">xadrez</div><div class="out">🎲 cores sorteadas — ⚪ Brancas: Ana · ⚫ Pretas: Bia</div></div>
+                        <div class="ex"><div class="in">e2 e4</div><div class="out">♟️ Jogada 1 — tabuleiro novo marcando o próximo jogador</div></div>
                     </div>
                 </div>
             </button>

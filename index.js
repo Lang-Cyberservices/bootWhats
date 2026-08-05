@@ -16,6 +16,7 @@ const StatsCounter = require('./services/StatsCounter');
 const { getSenderId } = require('./services/messageUtils');
 const LlamaResponder = require('./services/LlamaResponder');
 const ForcaGame = require('./services/games/forca');
+const XadrezGame = require('./services/games/xadrez');
 const BlockedCommands = require('./services/BlockedCommands');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
@@ -42,8 +43,9 @@ const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const forcaGame = new ForcaGame();
+const xadrezGame = new XadrezGame();
 const blockedCommands = new BlockedCommands();
-const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands);
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands, xadrezGame);
 commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
@@ -125,6 +127,7 @@ async function init() {
     });
 
     await forcaGame.loadActiveGames();
+    await xadrezGame.loadActiveGames();
     await blockedCommands.load();
 
     try {
@@ -166,6 +169,7 @@ const client = new Client({
 });
 commandHandler.setClient(client);
 forcaGame.setClient(client);
+xadrezGame.setClient(client);
 
 // O WhatsApp Web é um PWA: com sessão existente, o service worker serve a
 // página do próprio cache e a versão fixada em `webVersion` é ignorada.
@@ -299,6 +303,7 @@ client.on('message', async (msg) => {
     await commandHandler.handle(msg, chat);
     if (!isCommand) {
         await forcaGame.handleMessage(msg, chat);
+        await xadrezGame.handleMessage(msg, chat);
     }
     await llamaResponder.handleMessage(msg, chat);
 });

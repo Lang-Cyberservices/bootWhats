@@ -23,6 +23,10 @@ php -S localhost:8080 -t tools/gestao/public tools/gestao/public/router.php
 # Validate a local image against NSFW logic (returns JSON)
 node tools/validate_evidence_md5.js /path/to/image.webp
 
+# Chess board renderer + rules check (no WhatsApp, no DB)
+node tools/xadrez_preview.js "e4 e5 Nf3 Nc6 Bb5" /tmp/board.png
+node tools/xadrez_preview.js --rules
+
 # LAION scoring (optional, requires Python venv)
 python3 -m venv .venv
 ./.venv/bin/pip install torch torchvision
@@ -53,6 +57,16 @@ Initializes in sequence: database → NSFWJS model → WhatsApp client. The bot 
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
+| `games/forca.js` | `/forca` — hangman, free-for-all, static images from `storage/forca/` |
+| `games/xadrez.js` | `/xadrez` — 1v1 chess, rules via `chess.js`, strict turns, expiry sweeper |
+| ↳ `/xadrez solo` | Hidden mode, `DEV_GROUP_ID` only: plays against "Diogenes", who picks a random legal move from `chess.moves()`. Everything else (scoring, 10-move minimum, persistence) runs through the normal code path, so a solo game exercises the whole feature — including a `diogenes@bot` row in `game_scores`. Outside the dev group the argument is refused with a canned line. |
+| `games/chessBoard.js` | Renders the chess board PNG with `canvas` (sprites in `storage/xadrez/pieces/`) |
+
+Games follow a shared pattern: in-memory `Map` keyed by `chatId`, write-through to Prisma so a
+restart rehydrates via `loadActiveGames()`, and player input arrives as a **reply to the bot's last
+round message** (matched against `roundMessageIds`) rather than as a command. Non-command messages
+reach them from the `if (!isCommand)` block in `index.js`. Aggregate points for every game live in
+`game_scores`, keyed by `gameType` (`forca`, `xadrez`).
 
 **Database (Prisma + MariaDB)**
 Schema lives in `prisma/schema.prisma`. Key models: `Log`, `MediaHash`, `OraclePrediction`, `MessageStats`, `MessageStatsBucket`, `Admin`, `WelcomeConfig`, `Joke`, `PowerAnimal`, `PhilosopherProtector`, `UserHoroscope`, `DailyHoroscope`.
