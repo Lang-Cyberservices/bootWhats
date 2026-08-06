@@ -135,7 +135,8 @@ async function init() {
         imageAnalyzer = new ImageAnalyzer(model, {
             auditLogger,
             evidenceDir: process.env.NSFW_EVIDENCE_DIR,
-            inputSize: 299
+            inputSize: 299,
+            blockedCommands
         });
         console.log("✅ Modelo de IA carregado e pronto!");
     } catch (e) {

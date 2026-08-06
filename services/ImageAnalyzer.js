@@ -23,6 +23,7 @@ class ImageAnalyzer {
         this.laionScript = options.laionScript || process.env.LAION_SCRIPT || 'tools/laion_score.py';
         this.laionThreshold = Number(process.env.LAION_THRESHOLD ?? 0.5);
         this.isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
+        this.blockedCommands = options.blockedCommands;
     }
 
            
@@ -30,6 +31,9 @@ class ImageAnalyzer {
     async handle(msg, chat) {
         if (!this.model) return;
         if (!msg.hasMedia || (msg.type !== 'image' && msg.type !== 'sticker')) return;
+
+        const chatId = chat?.id?._serialized || chat?.id?.user || '';
+        if (this.blockedCommands?.isBlocked(chatId, 'proibir')) return;
 
         if (this.isDev) {
             console.log(`Analisando mídia de: ${msg.author}...`);
