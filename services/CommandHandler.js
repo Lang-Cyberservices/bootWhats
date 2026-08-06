@@ -89,12 +89,13 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
         this.forcaGame = forcaGame;
         this.blockedCommands = blockedCommands;
+        this.xadrezGame = xadrezGame;
         this.client = null;
         this.getBotReadyAt = null;
         this.userIdsCache = new Map();
@@ -355,6 +356,10 @@ class CommandHandler {
 
         if (command === '/forca') {
             return this.handleForca(msg, chat, args);
+        }
+
+        if (command === '/xadrez' || command === '/chess') {
+            return this.handleXadrez(msg, chat, args);
         }
 
         if (command === '/pais') {
@@ -1081,6 +1086,20 @@ class CommandHandler {
         }
     }
 
+    async handleXadrez(msg, chat, args) {
+        if (!this.xadrezGame) {
+            await msg.reply('❌ O jogo de xadrez ainda não está disponível.');
+            return;
+        }
+
+        try {
+            await this.xadrezGame.startGame(msg, chat, args);
+        } catch (err) {
+            console.error('Erro no /xadrez:', err?.message || err);
+            await msg.reply('❌ Não consegui iniciar a partida de xadrez agora.');
+        }
+    }
+
     sanitizeDescription(text, maxLen = 280) {
         if (!text) return '';
         const clean = String(text)
@@ -1645,19 +1664,24 @@ class CommandHandler {
 
     async handleEstatisticas(msg, chat, args) {
         const raw = String(args?.[0] || '').toLowerCase().trim();
-        const mode = raw === 'diario' || raw === 'daily' ? 'day'
+        // `/rank xadrez` não olha para as estatísticas de mensagens: é um
+        // ranking próprio, montado em sendGameRank().
+        const gameMode = raw === 'xadrez' || raw === 'chess' ? 'xadrez' : null;
+        const mode = gameMode ? null : (raw === 'diario' || raw === 'daily' ? 'day'
             : raw === 'semanal' || raw === 'weekly' ? 'week'
                 : raw === 'mensal' || raw === 'monthly' ? 'month'
-                    : null;
+                    : null);
         const now = new Date();
 
-        const attributeKey = mode === 'day'
-            ? 'diario'
-            : mode === 'month'
-                ? 'mensal'
-                : mode === 'week'
-                    ? 'semanal'
-                    : 'sem_atributo';
+        const attributeKey = gameMode
+            ? gameMode
+            : mode === 'day'
+                ? 'diario'
+                : mode === 'month'
+                    ? 'mensal'
+                    : mode === 'week'
+                        ? 'semanal'
+                        : 'sem_atributo';
 
         if (mode === 'month' && now.getDate() < 25) {
             await msg.reply('❌ O /rank mensal só pode ser usado depois do dia 25.');
@@ -1669,7 +1693,7 @@ class CommandHandler {
             return;
         }
 
-        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo']);
+        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo', 'xadrez']);
         if (rateLimitedAttributes.has(attributeKey)) {
             const windowStart = new Date(now.getTime() - 30 * 60 * 1000);
 
@@ -1698,6 +1722,7 @@ class CommandHandler {
                 if (first === 'diario' || first === 'daily') return 'diario';
                 if (first === 'mensal' || first === 'monthly') return 'mensal';
                 if (first === 'semanal' || first === 'weekly') return 'semanal';
+                if (first === 'xadrez' || first === 'chess') return 'xadrez';
                 return 'sem_atributo';
             };
 
@@ -1709,6 +1734,12 @@ class CommandHandler {
                 await msg.reply(`⏳ O /rank ${attributeKey.replace('_', ' ')} só pode ser usado a cada 30 minutos. Tente novamente às ${hh}:${mm}.`);
                 return;
             }
+        }
+
+        if (gameMode) {
+            await this.logRankCommand(msg, chat, args);
+            await this.sendGameRank(msg, chat, gameMode);
+            return;
         }
 
         let periodStart = null;
@@ -1741,23 +1772,7 @@ class CommandHandler {
             ? { ...whereBase, periodType: mode, periodStart }
             : whereBase;
 
-        try {
-            const authorId = getSenderId(msg);
-            const authorPhone = await this.getFromNumber(msg);
-            await prisma.commandLog.create({
-                data: {
-                    command: '/rank',
-                    args: args?.length ? JSON.stringify(args) : null,
-                    chatId: chat?.id?._serialized || null,
-                    chatName: chat?.name || null,
-                    authorId: authorId || null,
-                    phone: authorPhone || null,
-                    messageId: msg.id?._serialized || msg.id?.id || null
-                }
-            });
-        } catch (err) {
-            console.warn('Falha ao registrar /rank:', err?.message || err);
-        }
+        await this.logRankCommand(msg, chat, args);
 
         const [topMessages, topCommands] = await Promise.all([
             statsSource.findMany({
@@ -1820,24 +1835,20 @@ class CommandHandler {
 
         if (!mode) {
             try {
-                const topGameScores = await prisma.gameScore.findMany({
-                    where: { chatId: chat?.id?._serialized, gameType: 'forca' },
-                    orderBy: { totalPoints: 'desc' },
+                // Placar único: soma o que a pessoa fez na forca e no xadrez.
+                const topGameScores = await prisma.gameScore.groupBy({
+                    by: ['authorId'],
+                    where: { chatId: chat?.id?._serialized },
+                    _sum: { totalPoints: true, wins: true, draws: true, losses: true },
+                    orderBy: { _sum: { totalPoints: 'desc' } },
                     take: 5
                 });
 
                 if (topGameScores.length) {
-                    lines.push('', '🎮 *Forca — pontuação:*');
+                    lines.push('', '🎮 *Jogos — pontuação:*');
                     for (const [i, score] of topGameScores.entries()) {
-                        let label = labelById.get(score.authorId);
-                        if (!label && this.client) {
-                            try {
-                                const contact = await this.client.getContactById(score.authorId);
-                                label = contact?.pushname || contact?.name || contact?.number || null;
-                            } catch (_) {}
-                        }
-                        label = label || String(score.authorId).split('@')[0];
-                        lines.push(`${i + 1}. ${label} — ${score.totalPoints} pontos (${score.wins} vitórias)`);
+                        const label = await this.resolveScoreLabel(score.authorId, labelById);
+                        lines.push(`${i + 1}. ${label} — ${this.formatScoreLine(score._sum)}`);
                     }
                 }
             } catch (err) {
@@ -1846,6 +1857,76 @@ class CommandHandler {
         }
 
         await msg.reply(lines.join('\n'));
+    }
+
+    async logRankCommand(msg, chat, args) {
+        try {
+            const authorId = getSenderId(msg);
+            const authorPhone = await this.getFromNumber(msg);
+            await prisma.commandLog.create({
+                data: {
+                    command: '/rank',
+                    args: args?.length ? JSON.stringify(args) : null,
+                    chatId: chat?.id?._serialized || null,
+                    chatName: chat?.name || null,
+                    authorId: authorId || null,
+                    phone: authorPhone || null,
+                    messageId: msg.id?._serialized || msg.id?.id || null
+                }
+            });
+        } catch (err) {
+            console.warn('Falha ao registrar /rank:', err?.message || err);
+        }
+    }
+
+    // "120 pontos (5V 1E 2D)" — aceita tanto uma linha de game_scores quanto o
+    // objeto `_sum` do groupBy.
+    formatScoreLine(score) {
+        const points = score?.totalPoints || 0;
+        const wins = score?.wins || 0;
+        const draws = score?.draws || 0;
+        const losses = score?.losses || 0;
+        return `${points} pontos (${wins}V ${draws}E ${losses}D)`;
+    }
+
+    async resolveScoreLabel(authorId, labelById = null) {
+        let label = labelById?.get(authorId) || null;
+        if (!label && this.client) {
+            try {
+                const contact = await this.client.getContactById(authorId);
+                label = contact?.pushname || contact?.name || contact?.number || null;
+            } catch (_) {}
+        }
+        return label || String(authorId).split('@')[0];
+    }
+
+    async sendGameRank(msg, chat, gameType) {
+        const titles = { xadrez: '♟️ *Xadrez — pontuação*' };
+
+        try {
+            const scores = await prisma.gameScore.findMany({
+                where: { chatId: chat?.id?._serialized, gameType },
+                orderBy: { totalPoints: 'desc' },
+                take: 5
+            });
+
+            if (!scores.length) {
+                await msg.reply('♟️ Ninguém pontuou no xadrez neste grupo ainda. Use */xadrez* para abrir uma partida.');
+                return;
+            }
+
+            const lines = [titles[gameType] || `🎮 *${gameType}*`, ''];
+            for (const [i, score] of scores.entries()) {
+                const label = await this.resolveScoreLabel(score.authorId);
+                lines.push(`${i + 1}. ${label} — ${this.formatScoreLine(score)}`);
+            }
+            lines.push('', `_Vitória vale 30 pontos, empate 15. Partidas com menos de 10 lances não contam._`);
+
+            await msg.reply(lines.join('\n'));
+        } catch (err) {
+            console.warn('Falha ao montar o rank de jogos:', err?.message || err);
+            await msg.reply('❌ Não consegui consultar o ranking agora.');
+        }
     }
 
     async handleSobre(msg, _chat) {

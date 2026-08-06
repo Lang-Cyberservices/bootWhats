@@ -290,6 +290,34 @@ model Country {
   @@map("countries")
 }
 
+model GameXadrez {
+  id                    Int       @id @default(autoincrement())
+  chatId                String    @db.VarChar(255)
+  status                String    @db.VarChar(20)
+  player1Id             String    @db.VarChar(255)
+  player2Id             String?   @db.VarChar(255)
+  whiteId               String?   @db.VarChar(255)
+  blackId               String?   @db.VarChar(255)
+  fen                   String    @db.Text
+  movesSan              String    @db.Text
+  lastMoveFrom          String?   @db.VarChar(4)
+  lastMoveTo            String?   @db.VarChar(4)
+  drawOfferBy           String?   @db.VarChar(255)
+  currentRoundMessageId String?   @db.VarChar(255)
+  roundMessageIds       String    @db.Text
+  startedBy             String    @db.VarChar(255)
+  result                String?   @db.VarChar(20)
+  winnerId              String?   @db.VarChar(255)
+  endReason             String?   @db.VarChar(40)
+  lastMoveAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  finishedAt            DateTime?
+
+  @@index([chatId, status])
+  @@map("game_xadrez")
+}
+
 model GameScore {
   id            Int      @id @default(autoincrement())
   chatId        String   @db.VarChar(255)
@@ -297,6 +325,8 @@ model GameScore {
   gameType      String   @db.VarChar(50)
   totalPoints   Int      @default(0)
   wins          Int      @default(0)
+  draws         Int      @default(0)
+  losses        Int      @default(0)
   matchesPlayed Int      @default(0)
   updatedAt     DateTime @updatedAt
 
