@@ -118,15 +118,30 @@ que você suspeita terem sido bloqueadas por engano. Sem os dois lados a matriz 
 positivo, que é provavelmente o problema principal.
 
 ```bash
-node tools/nsfw_eval.js storage/eval --variants=b32-legacy,b32,l14
+node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --variants=b32-legacy,b32,l14
 ```
 
 A primeira rodada gera `storage/eval/labels.csv` com todos os scores e a coluna `label` vazia.
 Preencha com `nsfw` ou `ok` e rode de novo — aí saem matriz de confusão, varredura de limiares e o
 teste da hipótese do `Sexy`. Rótulo já preenchido nunca é sobrescrito.
 
-Cada variante carrega o CLIP uma vez, o que leva cerca de 90 s. Três variantes = uns 5 minutos de
-espera antes dos resultados, independente do tamanho da pasta.
+Cada variante do LAION carrega o CLIP uma vez, o que leva cerca de 90 s. Três variantes = uns 5
+minutos de espera antes dos resultados, independente do tamanho da pasta.
+
+### O que cada eixo compara
+
+**`--models`** é o portão principal, que decide a maioria dos casos sozinho:
+
+| Modelo | O que é |
+|---|---|
+| `inception_v3` | v1.0 do `nsfw_model`, o que produção usa hoje. Não existe versão mais nova dele. |
+| `mobilenet_v2_mid` | release v1.1.0 (2020) do mesmo autor, arquitetura diferente. Vem empacotado no `nsfwjs`, sem download. |
+
+**`--variants`** é a segunda opinião do LAION, consultada só na faixa cinzenta (`nsfwScore` entre
+0,65 e 0,95). Ver a tabela do passo 2.
+
+Ambos os modelos são de 2019–2020. Se nenhum dos dois resolver, o caminho seria um classificador
+ViT atual — fora do escopo desta branch.
 
 **Aviso sobre a variante `l14`:** ela baixa ~890 MB de pesos na primeira execução e o processo chega
 a **2,9 GB de RSS**. Confira a RAM antes de cogitar isso em produção.
@@ -157,7 +172,7 @@ Hub ao subir; `HF_HUB_OFFLINE=1` elimina até isso.
 
 - O `Sexy` entra no bloqueio automático com o mesmo peso de `Porn`. O passo 5 responde se é a origem
   dos falsos positivos; se for, a correção não envolve trocar modelo.
-- A coluna `decisao_atual` do CSV simula com a primeira variante da lista `--variants`, o que depende
-  silenciosamente da ordem dos argumentos.
 - O `nsfw_testset.zip` do LAION, anotado à mão pelos autores do modelo, daria um limiar de referência
   independente das suas imagens.
+- Trocar o portão principal por um classificador ViT moderno. Os dois modelos disponíveis hoje são de
+  2019 e 2020; o sidecar persistente já tornou um modelo maior viável em custo.

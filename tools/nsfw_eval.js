@@ -25,6 +25,28 @@ const CSV_NAME = 'labels.csv';
 const ALL_VARIANTS = ['b32-legacy', 'b32', 'l14'];
 const CLASSES = ['Neutral', 'Drawing', 'Sexy', 'Hentai', 'Porn'];
 
+// Portão principal. `inception_v3` carrega os pesos de models/ — os mesmos que
+// produção usa. `mobilenet_v2_mid` é o release v1.1.0 do nsfw_model (2020), uma
+// arquitetura diferente e mais recente, que vem empacotada dentro do nsfwjs e
+// não precisa de download.
+const MODELS = {
+    inception_v3: {
+        label: 'inception_v3 (produção)',
+        load: () => nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 }),
+        fallbackInputSize: 299
+    },
+    mobilenet_v2_mid: {
+        label: 'mobilenet_v2_mid (v1.1.0)',
+        load: () => nsfw.load('MobileNetV2Mid', { type: 'graph' }),
+        fallbackInputSize: 224
+    }
+};
+const ALL_MODELS = Object.keys(MODELS);
+
+// Configuração de produção: é a combinação que a coluna de decisão simula.
+const PROD_MODEL = 'inception_v3';
+const PROD_VARIANT = 'b32-legacy';
+
 // Limiares em produção hoje, usados como linha de base na comparação.
 const CURRENT = {
     hard: 0.95,
@@ -32,21 +54,29 @@ const CURRENT = {
     laion: Number(process.env.LAION_THRESHOLD ?? 0.5)
 };
 
+function parseList(arg, prefix, allowed, kind) {
+    const values = arg
+        .slice(prefix.length)
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+    const unknown = values.filter((v) => !allowed.includes(v));
+    if (unknown.length) {
+        throw new Error(`${kind} desconhecido: ${unknown.join(', ')}. Use: ${allowed.join(', ')}`);
+    }
+    return values;
+}
+
 function parseArgs(argv) {
     const positional = [];
     let variants = ALL_VARIANTS;
+    let models = ALL_MODELS;
 
     for (const arg of argv) {
         if (arg.startsWith('--variants=')) {
-            variants = arg
-                .slice('--variants='.length)
-                .split(',')
-                .map((v) => v.trim())
-                .filter(Boolean);
-            const unknown = variants.filter((v) => !ALL_VARIANTS.includes(v));
-            if (unknown.length) {
-                throw new Error(`Variante desconhecida: ${unknown.join(', ')}. Use: ${ALL_VARIANTS.join(', ')}`);
-            }
+            variants = parseList(arg, '--variants=', ALL_VARIANTS, 'Variante');
+        } else if (arg.startsWith('--models=')) {
+            models = parseList(arg, '--models=', ALL_MODELS, 'Modelo');
         } else if (arg === '--no-laion') {
             variants = [];
         } else if (arg.startsWith('--')) {
@@ -56,7 +86,9 @@ function parseArgs(argv) {
         }
     }
 
-    return { dir: path.resolve(positional[0] || 'storage/eval'), variants };
+    if (!models.length) throw new Error('É preciso pelo menos um modelo em --models');
+
+    return { dir: path.resolve(positional[0] || 'storage/eval'), variants, models };
 }
 
 // ---------------------------------------------------------------- CSV
@@ -179,8 +211,8 @@ async function listImages(dir) {
     return { images, skipped };
 }
 
-async function scoreWithNsfwjs(analyzer, images) {
-    const inputSize = analyzer.getModelInputSize(analyzer.model) || 299;
+async function scoreWithNsfwjs(analyzer, images, fallbackInputSize) {
+    const inputSize = analyzer.getModelInputSize(analyzer.model) || fallbackInputSize;
     const results = new Map();
 
     for (const image of images) {
@@ -253,13 +285,14 @@ function nsfwScoreFrom(scores, { includeSexy }) {
     return Math.max(...parts);
 }
 
-function confusion(rows, variant, thresholds, { includeSexy }) {
+function confusion(rows, model, variant, thresholds, { includeSexy }) {
     const stats = { tp: 0, fp: 0, tn: 0, fn: 0, undecided: 0, total: 0 };
 
     for (const row of rows) {
-        if (!row.label || !row.scores) continue;
+        const scores = row.models[model];
+        if (!row.label || !scores) continue;
         stats.total++;
-        const nsfwScore = nsfwScoreFrom(row.scores, { includeSexy });
+        const nsfwScore = nsfwScoreFrom(scores, { includeSexy });
         const { blocked } = decide(nsfwScore, row.laion[variant], thresholds);
         const isNsfw = row.label === 'nsfw';
 
@@ -276,7 +309,7 @@ function confusion(rows, variant, thresholds, { includeSexy }) {
     return { ...stats, precision, recall, f1, errors: stats.fp + stats.fn };
 }
 
-function sweep(rows, variant, { includeSexy }) {
+function sweep(rows, model, variant, { includeSexy }) {
     const grid = (from, to, step) => {
         const values = [];
         for (let v = from; v <= to + 1e-9; v += step) values.push(Number(v.toFixed(2)));
@@ -289,7 +322,7 @@ function sweep(rows, variant, { includeSexy }) {
             if (soft >= hard) continue;
             for (const laion of grid(0.05, 0.95, 0.05)) {
                 const thresholds = { hard, soft, laion };
-                const stats = confusion(rows, variant, thresholds, { includeSexy });
+                const stats = confusion(rows, model, variant, thresholds, { includeSexy });
                 if (!stats.total) continue;
                 const score = stats.errors + stats.undecided * 0.5;
                 if (!best || score < best.score || (score === best.score && (stats.f1 ?? 0) > (best.stats.f1 ?? 0))) {
@@ -306,22 +339,38 @@ function sweep(rows, variant, { includeSexy }) {
 const pct = (v) => (v === null || v === undefined ? '  —  ' : `${(v * 100).toFixed(1)}%`);
 const num = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(4));
 
-function printPerFile(rows, variants) {
-    console.log('\n═══ Pontuação por arquivo ═══\n');
+// Combinação que a coluna de decisão simula: cai para o que estiver disponível
+// se produção não foi incluída na rodada, mas sempre diz qual usou.
+function decisionBasis(models, variants) {
+    return {
+        model: models.includes(PROD_MODEL) ? PROD_MODEL : models[0],
+        variant: variants.includes(PROD_VARIANT) ? PROD_VARIANT : variants[0] || null
+    };
+}
+
+function printPerFile(rows, models, variants) {
+    const basis = decisionBasis(models, variants);
+    console.log('\n═══ Pontuação por arquivo ═══');
+    console.log(`(decisão simulada com ${basis.model} + LAION ${basis.variant || 'ausente'})\n`);
+
     const table = rows.map((row) => {
         const entry = {
-            arquivo: row.file.length > 26 ? `${row.file.slice(0, 23)}...` : row.file,
-            rótulo: row.label || '—',
-            nsfwScore: row.scores ? nsfwScoreFrom(row.scores, { includeSexy: true }).toFixed(3) : '—',
-            semSexy: row.scores ? nsfwScoreFrom(row.scores, { includeSexy: false }).toFixed(3) : '—'
+            arquivo: row.file.length > 24 ? `${row.file.slice(0, 21)}...` : row.file,
+            rótulo: row.label || '—'
         };
+        for (const model of models) {
+            const s = row.models[model];
+            entry[model] = s ? nsfwScoreFrom(s, { includeSexy: true }).toFixed(3) : '—';
+        }
         for (const variant of variants) {
             entry[variant] = num(row.laion[variant]);
         }
-        if (row.scores) {
+
+        const s = row.models[basis.model];
+        if (s) {
             const d = decide(
-                nsfwScoreFrom(row.scores, { includeSexy: true }),
-                row.laion[variants[0]],
+                nsfwScoreFrom(s, { includeSexy: true }),
+                basis.variant ? row.laion[basis.variant] : null,
                 CURRENT
             );
             entry.decisão = `${d.blocked === null ? 'INDEF' : d.blocked ? 'BLOQUEIA' : 'libera'} (${d.gate})`;
@@ -331,8 +380,8 @@ function printPerFile(rows, variants) {
     console.table(table);
 }
 
-function printMetrics(rows, variants) {
-    const labelled = rows.filter((r) => r.label && r.scores);
+function printMetrics(rows, models, variants) {
+    const labelled = rows.filter((r) => r.label && models.some((m) => r.models[m]));
     if (!labelled.length) {
         console.log('\n═══ Métricas ═══\n');
         console.log('  Nenhum arquivo rotulado ainda.');
@@ -345,46 +394,54 @@ function printMetrics(rows, variants) {
     console.log(`\n═══ Métricas (${labelled.length} rotulados: ${nsfwCount} nsfw, ${labelled.length - nsfwCount} ok) ═══\n`);
 
     console.log(`Com os limiares atuais (hard=${CURRENT.hard} soft=${CURRENT.soft} laion=${CURRENT.laion}):\n`);
-    const current = variants.map((variant) => {
-        const s = confusion(rows, variant, CURRENT, { includeSexy: true });
-        return {
-            variante: variant,
-            'falso+': s.fp,
-            'falso-': s.fn,
-            acertos: s.tp + s.tn,
-            indef: s.undecided,
-            precisão: pct(s.precision),
-            recall: pct(s.recall),
-            F1: pct(s.f1)
-        };
-    });
+    const current = [];
+    for (const model of models) {
+        for (const variant of variants) {
+            const s = confusion(rows, model, variant, CURRENT, { includeSexy: true });
+            current.push({
+                modelo: model,
+                variante: variant,
+                'falso+': s.fp,
+                'falso-': s.fn,
+                acertos: s.tp + s.tn,
+                indef: s.undecided,
+                precisão: pct(s.precision),
+                recall: pct(s.recall),
+                F1: pct(s.f1)
+            });
+        }
+    }
     console.table(current);
 
     console.log('\nMelhores limiares encontrados para o seu conjunto:\n');
     const tuned = [];
-    for (const variant of variants) {
-        const best = sweep(rows, variant, { includeSexy: true });
-        if (!best) continue;
-        tuned.push({
-            variante: variant,
-            hard: best.thresholds.hard,
-            soft: best.thresholds.soft,
-            laion: best.thresholds.laion,
-            'falso+': best.stats.fp,
-            'falso-': best.stats.fn,
-            F1: pct(best.stats.f1)
-        });
+    for (const model of models) {
+        for (const variant of variants) {
+            const best = sweep(rows, model, variant, { includeSexy: true });
+            if (!best) continue;
+            tuned.push({
+                modelo: model,
+                variante: variant,
+                hard: best.thresholds.hard,
+                soft: best.thresholds.soft,
+                laion: best.thresholds.laion,
+                'falso+': best.stats.fp,
+                'falso-': best.stats.fn,
+                F1: pct(best.stats.f1)
+            });
+        }
     }
     console.table(tuned);
 
     console.log('\nHipótese do "Sexy" — a classe entra no bloqueio automático com o mesmo peso de "Porn".');
     console.log('Se tirar ela reduzir falso positivo sem criar falso negativo, o problema não é o modelo:\n');
+    const basis = decisionBasis(models, variants);
     const sexyTest = [];
-    for (const variant of variants) {
+    for (const model of models) {
         for (const includeSexy of [true, false]) {
-            const s = confusion(rows, variant, CURRENT, { includeSexy });
+            const s = confusion(rows, model, basis.variant, CURRENT, { includeSexy });
             sexyTest.push({
-                variante: variant,
+                modelo: model,
                 Sexy: includeSexy ? 'inclui' : 'exclui',
                 'falso+': s.fp,
                 'falso-': s.fn,
@@ -398,7 +455,7 @@ function printMetrics(rows, variants) {
 // ---------------------------------------------------------------- main
 
 async function main() {
-    const { dir, variants } = parseArgs(process.argv.slice(2));
+    const { dir, variants, models } = parseArgs(process.argv.slice(2));
 
     let stat;
     try {
@@ -430,14 +487,17 @@ async function main() {
     const labels = await readExistingLabels(csvPath);
     if (labels.size) console.log(`🏷️ ${labels.size} rótulo(s) recuperado(s) do ${CSV_NAME}.\n`);
 
-    const model = await nsfw.load('file://./models/inception_v3/', {
-        type: 'inception_v3',
-        size: 299
-    });
-    const analyzer = new ImageAnalyzer(model, { inputSize: 299 });
-
-    console.log('🔍 NSFWJS...');
-    const nsfwScores = await scoreWithNsfwjs(analyzer, images);
+    const modelScores = {};
+    for (const modelName of models) {
+        console.log(`🔍 NSFWJS "${MODELS[modelName].label}"...`);
+        const loaded = await MODELS[modelName].load();
+        const analyzer = new ImageAnalyzer(loaded, { inputSize: MODELS[modelName].fallbackInputSize });
+        modelScores[modelName] = await scoreWithNsfwjs(
+            analyzer,
+            images,
+            MODELS[modelName].fallbackInputSize
+        );
+    }
 
     const laionScores = {};
     for (const variant of variants) {
@@ -448,48 +508,67 @@ async function main() {
     const rows = images.map((image) => ({
         file: image.name,
         label: labels.get(image.name) || '',
-        scores: nsfwScores.get(image.name),
+        models: Object.fromEntries(
+            models.map((m) => [m, modelScores[m].get(image.name) || null])
+        ),
         laion: Object.fromEntries(
             variants.map((v) => [v, laionScores[v].get(image.name) ?? null])
         )
     }));
 
+    const basis = decisionBasis(models, variants);
+    const decisionCol = `decisao_${basis.model}_${(basis.variant || 'sem_laion').replace(/-/g, '_')}`;
+    const gateCol = `portao_${basis.model}_${(basis.variant || 'sem_laion').replace(/-/g, '_')}`;
+
     const header = [
         'file', 'label',
-        'neutral', 'drawing', 'sexy', 'hentai', 'porn',
-        'nsfwScore', 'nsfwScoreNoSexy',
+        // Nome do modelo em cada coluna: sem isso não dá para saber de qual
+        // modelo veio o score quando há mais de um na rodada.
+        ...models.flatMap((m) => [
+            `${m}_neutral`, `${m}_drawing`, `${m}_sexy`, `${m}_hentai`, `${m}_porn`,
+            `${m}_nsfwScore`, `${m}_nsfwScoreNoSexy`
+        ]),
         ...variants.map((v) => `laion_${v.replace(/-/g, '_')}`),
-        'decisao_atual', 'portao_atual'
+        decisionCol, gateCol
     ];
 
     const csvRows = rows.map((row) => {
-        const s = row.scores;
-        const nsfwScore = nsfwScoreFrom(s, { includeSexy: true });
-        const d = s ? decide(nsfwScore, row.laion[variants[0]], CURRENT) : { blocked: null, gate: 'ERRO' };
-        const out = {
-            file: row.file,
-            label: row.label,
-            neutral: s ? s.Neutral.toFixed(6) : '',
-            drawing: s ? s.Drawing.toFixed(6) : '',
-            sexy: s ? s.Sexy.toFixed(6) : '',
-            hentai: s ? s.Hentai.toFixed(6) : '',
-            porn: s ? s.Porn.toFixed(6) : '',
-            nsfwScore: s ? nsfwScore.toFixed(6) : '',
-            nsfwScoreNoSexy: s ? nsfwScoreFrom(s, { includeSexy: false }).toFixed(6) : '',
-            decisao_atual: d.blocked === null ? 'indefinido' : d.blocked ? 'nsfw' : 'ok',
-            portao_atual: d.gate
-        };
+        const out = { file: row.file, label: row.label };
+
+        for (const modelName of models) {
+            const s = row.models[modelName];
+            out[`${modelName}_neutral`] = s ? s.Neutral.toFixed(6) : '';
+            out[`${modelName}_drawing`] = s ? s.Drawing.toFixed(6) : '';
+            out[`${modelName}_sexy`] = s ? s.Sexy.toFixed(6) : '';
+            out[`${modelName}_hentai`] = s ? s.Hentai.toFixed(6) : '';
+            out[`${modelName}_porn`] = s ? s.Porn.toFixed(6) : '';
+            out[`${modelName}_nsfwScore`] = s ? nsfwScoreFrom(s, { includeSexy: true }).toFixed(6) : '';
+            out[`${modelName}_nsfwScoreNoSexy`] = s ? nsfwScoreFrom(s, { includeSexy: false }).toFixed(6) : '';
+        }
+
         for (const variant of variants) {
             const value = row.laion[variant];
             out[`laion_${variant.replace(/-/g, '_')}`] = value === null ? '' : value.toFixed(6);
         }
+
+        const baseScores = row.models[basis.model];
+        const d = baseScores
+            ? decide(
+                nsfwScoreFrom(baseScores, { includeSexy: true }),
+                basis.variant ? row.laion[basis.variant] : null,
+                CURRENT
+            )
+            : { blocked: null, gate: 'ERRO' };
+        out[decisionCol] = d.blocked === null ? 'indefinido' : d.blocked ? 'nsfw' : 'ok';
+        out[gateCol] = d.gate;
+
         return out;
     });
 
     await writeCsvAtomic(csvPath, header, csvRows);
 
-    printPerFile(rows, variants);
-    printMetrics(rows, variants);
+    printPerFile(rows, models, variants);
+    printMetrics(rows, models, variants);
 
     console.log(`\n💾 CSV atualizado: ${csvPath}`);
     if (!labels.size) {

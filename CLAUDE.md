@@ -29,9 +29,9 @@ php -S localhost:8080 -t tools/gestao/public tools/gestao/public/router.php
 # Validate a local image against NSFW logic (returns JSON)
 node tools/validate_evidence_md5.js /path/to/image.webp
 
-# Calibrate moderation: score a folder with NSFWJS + every LAION variant,
-# write labels.csv, print confusion matrix and threshold sweep. Read-only.
-node tools/nsfw_eval.js storage/eval --variants=b32-legacy,b32,l14
+# Calibrate moderation: score a folder with every NSFWJS model + every LAION
+# variant, write labels.csv, print confusion matrix and threshold sweep. Read-only.
+node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --variants=b32-legacy,b32,l14
 
 # Chess board renderer + rules check (no WhatsApp, no DB)
 node tools/xadrez_preview.js "e4 e5 Nf3 Nc6 Bb5" /tmp/board.png
@@ -84,6 +84,13 @@ after `JOB_MAX_ATTEMPTS` they become `failed`. The worker exits every
 `ImageAnalyzer` is now a pure engine: `analyze(buffer, { mimetype, isSticker, filePath })` with no
 WhatsApp or DB coupling. `nsfwScore` ≥ 0.95 → NSFW. 0.65–0.95 → second opinion from LAION.
 `isNsfw: null` means undecidable (LAION down) — the job retries and nothing is cached or deleted.
+
+**NSFWJS models.** Production loads `models/inception_v3`, which is the v1.0 artifact from
+`GantMan/nsfw_model` — the only Inception v3 ever published, so there is no newer version of it.
+There *is* a newer weights release, v1.1.0 (2020), but it ships a different architecture:
+`nsfw_mobilenet_v2_140_224`, which nsfwjs exposes as `MobileNetV2Mid` and bundles inside the npm
+package (no download). `tools/nsfw_eval.js` scores both so the choice can be made on data. Upgrading
+the nsfwjs *library* (4.2.1 → 4.4.0) changes no weights and buys no accuracy.
 
 `LaionClient` keeps **one** Python process alive (`tools/laion_score.py --serve`) instead of
 spawning one per image: the CLIP + safety model load costs ~90s, which used to be paid on every
