@@ -32,5 +32,5 @@ jobs:
             npx prisma generate
             npx prisma migrate deploy
             
-            # Reinicia a aplicação no PM2
-            pm2 restart bootwhats --time --update-env || pm2 start index.js --name "bootwhats" --time
+            # Reinicia bot + analisador no PM2 (ver ecosystem.config.js)
+            pm2 startOrReload ecosystem.config.js --update-env

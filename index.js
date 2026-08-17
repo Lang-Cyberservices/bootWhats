@@ -3,9 +3,9 @@ require('dotenv').config();
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const nsfw = require('nsfwjs');
 const MessageFilter = require('./services/MessageFilter');
-const ImageAnalyzer = require('./services/ImageAnalyzer');
+const MediaIngest = require('./services/MediaIngest');
+const VerdictDispatcher = require('./services/VerdictDispatcher');
 const CommandHandler = require('./services/CommandHandler');
 const AuditLogger = require('./services/AuditLogger');
 const OracleService = require('./services/OracleService');
@@ -35,8 +35,12 @@ let seenGroupIdsInDev = null;
 let isClientReady = false;
 let botReadyAt = null;
 
-let model;
-let imageAnalyzer;
+// `queue` (padrão): a análise roda no processo bootwhats-analyzer e o bot só
+// enfileira. `inline`: volta ao comportamento antigo, analisando dentro do bot —
+// serve como escape em produção sem precisar de redeploy.
+const analysisMode = (process.env.IMAGE_ANALYSIS_MODE || 'queue').toLowerCase();
+let mediaIngest;
+let verdictDispatcher;
 const auditLogger = new AuditLogger();
 const oracleService = new OracleService(auditLogger);
 const diceRoller = new DiceRoller();
@@ -52,28 +56,89 @@ const llamaResponder = new LlamaResponder({ auditLogger });
 
 const MAX_INIT_ATTEMPTS = 10;
 const WATCHDOG_INTERVAL_MS = 10 * 60_000;
+const DESTROY_TIMEOUT_MS = Number(process.env.CLIENT_DESTROY_TIMEOUT_MS) || 30_000;
 let watchdogTimer = null;
+let reconnectPromise = null;
 
-async function startClientWithRetry(attempt = 1) {
-    if (attempt > MAX_INIT_ATTEMPTS) {
-        console.error(`❌ ${MAX_INIT_ATTEMPTS} tentativas esgotadas. Intervenção manual necessária.`);
-        return;
-    }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// `client.destroy()` chama browser.close(), que trava para sempre quando o
+// Chromium não responde — e é justamente aí que a reconexão é acionada. Sem o
+// timeout + SIGKILL abaixo, cada reconexão deixava um Chromium vivo queimando CPU
+// até o fim dos tempos.
+async function destroyClient() {
     try {
-        await client.initialize();
+        await Promise.race([
+            client.destroy(),
+            sleep(DESTROY_TIMEOUT_MS).then(() => {
+                throw new Error(`destroy não respondeu em ${DESTROY_TIMEOUT_MS}ms`);
+            })
+        ]);
     } catch (err) {
-        const msg = err?.message || err;
-        const delayMs = Math.min(30000, 2000 * attempt);
-        console.error(`❌ Falha ao inicializar o WhatsApp Web (tentativa ${attempt}/${MAX_INIT_ATTEMPTS}).`, msg);
-        console.error(`🔁 Tentando novamente em ${Math.round(delayMs / 1000)}s...`);
-        setTimeout(() => startClientWithRetry(attempt + 1), delayMs);
+        console.warn('⚠️ Falha ao encerrar o cliente:', err?.message || err);
+    }
+
+    killBrowserProcess();
+}
+
+function killBrowserProcess() {
+    let proc;
+    try {
+        proc = client.pupBrowser?.process?.();
+    } catch (_) {
+        proc = null;
+    }
+    if (!proc || proc.killed || proc.exitCode !== null) return;
+
+    console.warn(`🔪 Chromium (pid ${proc.pid}) sobreviveu ao destroy — matando.`);
+    try {
+        proc.kill('SIGKILL');
+    } catch (err) {
+        console.warn('⚠️ Não consegui matar o Chromium:', err?.message || err);
     }
 }
 
-async function triggerClientReconnect() {
-    isClientReady = false;
-    try { await client.destroy(); } catch (_) {}
-    await startClientWithRetry();
+// Laço em vez de setTimeout recursivo: cada tentativa fracassada pode ter deixado
+// um browser meio aberto, então destruímos antes de tentar de novo.
+async function startClientWithRetry() {
+    for (let attempt = 1; attempt <= MAX_INIT_ATTEMPTS; attempt++) {
+        try {
+            await client.initialize();
+            return true;
+        } catch (err) {
+            const delayMs = Math.min(30000, 2000 * attempt);
+            console.error(
+                `❌ Falha ao inicializar o WhatsApp Web (tentativa ${attempt}/${MAX_INIT_ATTEMPTS}).`,
+                err?.message || err
+            );
+            await destroyClient();
+            if (attempt === MAX_INIT_ATTEMPTS) break;
+            console.error(`🔁 Tentando novamente em ${Math.round(delayMs / 1000)}s...`);
+            await sleep(delayMs);
+        }
+    }
+
+    console.error(`❌ ${MAX_INIT_ATTEMPTS} tentativas esgotadas. Intervenção manual necessária.`);
+    return false;
+}
+
+// O watchdog e o evento 'disconnected' podem disparar juntos. Sem esta trava,
+// duas reconexões simultâneas abriam dois Chromium.
+function triggerClientReconnect() {
+    if (reconnectPromise) {
+        console.log('⏳ Reconexão já em andamento — ignorando pedido duplicado.');
+        return reconnectPromise;
+    }
+
+    reconnectPromise = (async () => {
+        isClientReady = false;
+        await destroyClient();
+        await startClientWithRetry();
+    })().finally(() => {
+        reconnectPromise = null;
+    });
+
+    return reconnectPromise;
 }
 
 async function checkClientHealth() {
@@ -130,22 +195,41 @@ async function init() {
     await xadrezGame.loadActiveGames();
     await blockedCommands.load();
 
-    try {
-        model = await nsfw.load('file://./models/inception_v3/', { type: 'inception_v3', size: 299 });
-        imageAnalyzer = new ImageAnalyzer(model, {
-            auditLogger,
-            evidenceDir: process.env.NSFW_EVIDENCE_DIR,
-            inputSize: 299,
-            blockedCommands
-        });
-        console.log("✅ Modelo de IA carregado e pronto!");
-    } catch (e) {
-        console.error("❌ Erro ao carregar o modelo de IA:", e);
+    mediaIngest = new MediaIngest({
+        auditLogger,
+        blockedCommands,
+        evidenceDir: process.env.NSFW_EVIDENCE_DIR,
+        inlineAnalyzer: analysisMode === 'inline' ? await loadInlineAnalyzer() : null
+    });
+
+    if (analysisMode === 'inline') {
+        console.warn('⚠️ IMAGE_ANALYSIS_MODE=inline: analisando dentro do processo do bot.');
+    } else {
+        verdictDispatcher = new VerdictDispatcher({ client, auditLogger, mediaIngest });
+        console.log('🖼️ Análise de imagens delegada ao worker (fila no banco).');
     }
 
-    // Inicializa o cliente mesmo se o modelo NSFW falhar,
-    // assim o bot continua funcionando (apenas sem análise de imagem).
     await startClientWithRetry();
+}
+
+// Só usado no modo inline. Em `queue` o bot nunca carrega tfjs-node — é o que
+// mantém o event loop livre para o Puppeteer.
+async function loadInlineAnalyzer() {
+    try {
+        const nsfw = require('nsfwjs');
+        const ImageAnalyzer = require('./services/ImageAnalyzer');
+        const LaionClient = require('./services/analyzer/LaionClient');
+        const model = await nsfw.load('file://./models/inception_v3/', {
+            type: 'inception_v3',
+            size: 299
+        });
+        console.log('✅ Modelo de IA carregado e pronto!');
+        return new ImageAnalyzer(model, { inputSize: 299, laionClient: new LaionClient() });
+    } catch (e) {
+        // Sem modelo o bot segue funcionando, só sem moderação de imagem.
+        console.error('❌ Erro ao carregar o modelo de IA:', e);
+        return null;
+    }
 }
 
 const client = new Client({
@@ -201,6 +285,7 @@ client.on('ready',  async() => {
         console.log('📱 Versão do WhatsApp Web carregada:', await client.getWWebVersion());
     } catch (_) {}
     startWatchdog();
+    verdictDispatcher?.start();
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
     }
@@ -300,7 +385,7 @@ client.on('message', async (msg) => {
     });
 
     // await messageFilter.handle(msg, chat);
-    await imageAnalyzer?.handle(msg, chat);
+    await mediaIngest?.handle(msg, chat);
     await commandHandler.handle(msg, chat);
     if (!isCommand) {
         await forcaGame.handleMessage(msg, chat);
@@ -386,5 +471,20 @@ function startIngestServer() {
         console.log(`🌐 API HTTP ativa na porta ${ingestPort}`);
     });
 }
+
+// Sem isto, um `pm2 restart` mata o Node e o Chromium fica órfão, segurando CPU
+// e memória até alguém reparar.
+let shuttingDown = false;
+for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, async () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(`\n👋 ${signal} recebido, encerrando o bot...`);
+        verdictDispatcher?.stop();
+        await destroyClient();
+        process.exit(0);
+    });
+}
+process.on('exit', () => killBrowserProcess());
 
 init(); // Inicia o carregamento da IA e depois o bot

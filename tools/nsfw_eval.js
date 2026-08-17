@@ -1,0 +1,505 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Avaliador de precisão da moderação de imagens.
+ *
+ * Pontua uma pasta de imagens com o NSFWJS e com cada variante do LAION, grava
+ * tudo num CSV de ida e volta e imprime métricas. É SOMENTE LEITURA: não apaga
+ * arquivo, não escreve no banco, não fala com o WhatsApp. O único arquivo que
+ * ele escreve é o labels.csv dentro da própria pasta avaliada.
+ *
+ *   node tools/nsfw_eval.js [pasta] [--variants=b32-legacy,b32,l14]
+ */
+
+require('dotenv').config();
+
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const sharp = require('sharp');
+const nsfw = require('nsfwjs');
+const ImageAnalyzer = require('../services/ImageAnalyzer');
+const LaionClient = require('../services/analyzer/LaionClient');
+
+const CSV_NAME = 'labels.csv';
+const ALL_VARIANTS = ['b32-legacy', 'b32', 'l14'];
+const CLASSES = ['Neutral', 'Drawing', 'Sexy', 'Hentai', 'Porn'];
+
+// Limiares em produção hoje, usados como linha de base na comparação.
+const CURRENT = {
+    hard: 0.95,
+    soft: 0.65,
+    laion: Number(process.env.LAION_THRESHOLD ?? 0.5)
+};
+
+function parseArgs(argv) {
+    const positional = [];
+    let variants = ALL_VARIANTS;
+
+    for (const arg of argv) {
+        if (arg.startsWith('--variants=')) {
+            variants = arg
+                .slice('--variants='.length)
+                .split(',')
+                .map((v) => v.trim())
+                .filter(Boolean);
+            const unknown = variants.filter((v) => !ALL_VARIANTS.includes(v));
+            if (unknown.length) {
+                throw new Error(`Variante desconhecida: ${unknown.join(', ')}. Use: ${ALL_VARIANTS.join(', ')}`);
+            }
+        } else if (arg === '--no-laion') {
+            variants = [];
+        } else if (arg.startsWith('--')) {
+            throw new Error(`Opção desconhecida: ${arg}`);
+        } else {
+            positional.push(arg);
+        }
+    }
+
+    return { dir: path.resolve(positional[0] || 'storage/eval'), variants };
+}
+
+// ---------------------------------------------------------------- CSV
+
+function parseCsv(text) {
+    const rows = [];
+    const lines = String(text).split(/\r?\n/).filter((l) => l.trim());
+    if (!lines.length) return { header: [], rows };
+
+    const header = splitCsvLine(lines[0]);
+    for (const line of lines.slice(1)) {
+        const cells = splitCsvLine(line);
+        const row = {};
+        header.forEach((key, i) => {
+            row[key] = cells[i] ?? '';
+        });
+        rows.push(row);
+    }
+    return { header, rows };
+}
+
+function splitCsvLine(line) {
+    const cells = [];
+    let current = '';
+    let quoted = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (quoted) {
+            if (ch === '"' && line[i + 1] === '"') {
+                current += '"';
+                i++;
+            } else if (ch === '"') {
+                quoted = false;
+            } else {
+                current += ch;
+            }
+        } else if (ch === '"') {
+            quoted = true;
+        } else if (ch === ',') {
+            cells.push(current);
+            current = '';
+        } else {
+            current += ch;
+        }
+    }
+    cells.push(current);
+    return cells.map((c) => c.trim());
+}
+
+function toCsvCell(value) {
+    const str = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+// Rótulos são digitados à mão e não podem ser perdidos por uma rodada
+// interrompida: escreve em arquivo temporário e renomeia por cima.
+async function writeCsvAtomic(filePath, header, rows) {
+    const lines = [header.join(',')];
+    for (const row of rows) {
+        lines.push(header.map((key) => toCsvCell(row[key])).join(','));
+    }
+    const tmpPath = `${filePath}.tmp-${process.pid}`;
+    await fs.writeFile(tmpPath, `${lines.join('\n')}\n`, 'utf8');
+    await fs.rename(tmpPath, filePath);
+}
+
+async function readExistingLabels(csvPath) {
+    const labels = new Map();
+    let text;
+    try {
+        text = await fs.readFile(csvPath, 'utf8');
+    } catch (_) {
+        return labels;
+    }
+
+    const { rows } = parseCsv(text);
+    for (const row of rows) {
+        const label = normalizeLabel(row.label);
+        if (row.file && label) labels.set(row.file, label);
+    }
+    return labels;
+}
+
+function normalizeLabel(raw) {
+    const value = String(raw || '').trim().toLowerCase();
+    if (['nsfw', 'n', '1', 'bloquear', 'impróprio', 'improprio'].includes(value)) return 'nsfw';
+    if (['ok', 'o', '0', 'safe', 'limpo', 'liberar'].includes(value)) return 'ok';
+    return '';
+}
+
+// ---------------------------------------------------------------- imagens
+
+// Os arquivos de evidência são nomeados pelo md5 e a maioria não tem extensão,
+// então o formato precisa sair do conteúdo, nunca do nome.
+async function listImages(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const images = [];
+    const skipped = [];
+
+    for (const entry of entries) {
+        if (!entry.isFile() || entry.name === CSV_NAME || entry.name.startsWith('.')) continue;
+
+        const filePath = path.join(dir, entry.name);
+        try {
+            const metadata = await sharp(filePath).metadata();
+            if (!metadata?.format) throw new Error('formato não identificado');
+            images.push({
+                name: entry.name,
+                filePath,
+                format: metadata.format,
+                isAnimated: (metadata.pages || 1) > 1
+            });
+        } catch (err) {
+            skipped.push({ name: entry.name, reason: err?.message || String(err) });
+        }
+    }
+
+    images.sort((a, b) => a.name.localeCompare(b.name));
+    return { images, skipped };
+}
+
+async function scoreWithNsfwjs(analyzer, images) {
+    const inputSize = analyzer.getModelInputSize(analyzer.model) || 299;
+    const results = new Map();
+
+    for (const image of images) {
+        const buffer = await fs.readFile(image.filePath);
+        const frames = await analyzer.extractFrameBuffers(buffer, {
+            inputSize,
+            isAnimated: image.isAnimated,
+            mime: `image/${image.format}`,
+            filePath: image.filePath
+        });
+        if (!frames.length) {
+            results.set(image.name, null);
+            continue;
+        }
+        const predictions = await analyzer.classifyFrames(frames);
+        const byClass = {};
+        for (const cls of CLASSES) {
+            const found = predictions.find((p) => p.className === cls);
+            byClass[cls] = found ? found.probability : 0;
+        }
+        results.set(image.name, byClass);
+        process.stdout.write('.');
+    }
+
+    process.stdout.write('\n');
+    return results;
+}
+
+// Um cliente por variante, pontuando TODAS as imagens antes de trocar: carregar
+// o CLIP custa ~90s, então o laço externo precisa ser a variante. Invertido,
+// uma pasta de 50 arquivos levaria horas.
+async function scoreWithLaion(variant, images) {
+    const client = new LaionClient({ variant });
+    const results = new Map();
+
+    try {
+        for (const image of images) {
+            try {
+                results.set(image.name, await client.score(image.filePath));
+            } catch (err) {
+                results.set(image.name, null);
+                console.warn(`\n  ⚠️ ${image.name}: ${err?.message || err}`);
+            }
+            process.stdout.write('.');
+        }
+    } finally {
+        client.stop();
+    }
+
+    process.stdout.write('\n');
+    return results;
+}
+
+// ---------------------------------------------------------------- decisão
+
+// Reproduz a lógica de ImageAnalyzer.analyze: acima do hard bloqueia direto,
+// abaixo do soft libera direto, e só no meio o LAION opina. É por isso que a
+// maioria das decisões nunca chega ao LAION.
+function decide(nsfwScore, laionScore, thresholds) {
+    if (nsfwScore >= thresholds.hard) return { blocked: true, gate: 'HARD_BLOCK' };
+    if (nsfwScore < thresholds.soft) return { blocked: false, gate: 'PASS' };
+    if (laionScore === null || laionScore === undefined) return { blocked: null, gate: 'LAION_INDEF' };
+    return { blocked: laionScore >= thresholds.laion, gate: 'LAION' };
+}
+
+function nsfwScoreFrom(scores, { includeSexy }) {
+    if (!scores) return 0;
+    const parts = [scores.Porn, scores.Hentai];
+    if (includeSexy) parts.push(scores.Sexy);
+    return Math.max(...parts);
+}
+
+function confusion(rows, variant, thresholds, { includeSexy }) {
+    const stats = { tp: 0, fp: 0, tn: 0, fn: 0, undecided: 0, total: 0 };
+
+    for (const row of rows) {
+        if (!row.label || !row.scores) continue;
+        stats.total++;
+        const nsfwScore = nsfwScoreFrom(row.scores, { includeSexy });
+        const { blocked } = decide(nsfwScore, row.laion[variant], thresholds);
+        const isNsfw = row.label === 'nsfw';
+
+        if (blocked === null) stats.undecided++;
+        else if (blocked && isNsfw) stats.tp++;
+        else if (blocked && !isNsfw) stats.fp++;
+        else if (!blocked && isNsfw) stats.fn++;
+        else stats.tn++;
+    }
+
+    const precision = stats.tp + stats.fp ? stats.tp / (stats.tp + stats.fp) : null;
+    const recall = stats.tp + stats.fn ? stats.tp / (stats.tp + stats.fn) : null;
+    const f1 = precision && recall ? (2 * precision * recall) / (precision + recall) : null;
+    return { ...stats, precision, recall, f1, errors: stats.fp + stats.fn };
+}
+
+function sweep(rows, variant, { includeSexy }) {
+    const grid = (from, to, step) => {
+        const values = [];
+        for (let v = from; v <= to + 1e-9; v += step) values.push(Number(v.toFixed(2)));
+        return values;
+    };
+
+    let best = null;
+    for (const hard of grid(0.7, 0.99, 0.05)) {
+        for (const soft of grid(0.3, 0.9, 0.05)) {
+            if (soft >= hard) continue;
+            for (const laion of grid(0.05, 0.95, 0.05)) {
+                const thresholds = { hard, soft, laion };
+                const stats = confusion(rows, variant, thresholds, { includeSexy });
+                if (!stats.total) continue;
+                const score = stats.errors + stats.undecided * 0.5;
+                if (!best || score < best.score || (score === best.score && (stats.f1 ?? 0) > (best.stats.f1 ?? 0))) {
+                    best = { score, thresholds, stats };
+                }
+            }
+        }
+    }
+    return best;
+}
+
+// ---------------------------------------------------------------- relatório
+
+const pct = (v) => (v === null || v === undefined ? '  —  ' : `${(v * 100).toFixed(1)}%`);
+const num = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(4));
+
+function printPerFile(rows, variants) {
+    console.log('\n═══ Pontuação por arquivo ═══\n');
+    const table = rows.map((row) => {
+        const entry = {
+            arquivo: row.file.length > 26 ? `${row.file.slice(0, 23)}...` : row.file,
+            rótulo: row.label || '—',
+            nsfwScore: row.scores ? nsfwScoreFrom(row.scores, { includeSexy: true }).toFixed(3) : '—',
+            semSexy: row.scores ? nsfwScoreFrom(row.scores, { includeSexy: false }).toFixed(3) : '—'
+        };
+        for (const variant of variants) {
+            entry[variant] = num(row.laion[variant]);
+        }
+        if (row.scores) {
+            const d = decide(
+                nsfwScoreFrom(row.scores, { includeSexy: true }),
+                row.laion[variants[0]],
+                CURRENT
+            );
+            entry.decisão = `${d.blocked === null ? 'INDEF' : d.blocked ? 'BLOQUEIA' : 'libera'} (${d.gate})`;
+        }
+        return entry;
+    });
+    console.table(table);
+}
+
+function printMetrics(rows, variants) {
+    const labelled = rows.filter((r) => r.label && r.scores);
+    if (!labelled.length) {
+        console.log('\n═══ Métricas ═══\n');
+        console.log('  Nenhum arquivo rotulado ainda.');
+        console.log(`  Preencha a coluna "label" do ${CSV_NAME} com "nsfw" ou "ok" e rode de novo`);
+        console.log('  para ver matriz de confusão e varredura de limiares.\n');
+        return;
+    }
+
+    const nsfwCount = labelled.filter((r) => r.label === 'nsfw').length;
+    console.log(`\n═══ Métricas (${labelled.length} rotulados: ${nsfwCount} nsfw, ${labelled.length - nsfwCount} ok) ═══\n`);
+
+    console.log(`Com os limiares atuais (hard=${CURRENT.hard} soft=${CURRENT.soft} laion=${CURRENT.laion}):\n`);
+    const current = variants.map((variant) => {
+        const s = confusion(rows, variant, CURRENT, { includeSexy: true });
+        return {
+            variante: variant,
+            'falso+': s.fp,
+            'falso-': s.fn,
+            acertos: s.tp + s.tn,
+            indef: s.undecided,
+            precisão: pct(s.precision),
+            recall: pct(s.recall),
+            F1: pct(s.f1)
+        };
+    });
+    console.table(current);
+
+    console.log('\nMelhores limiares encontrados para o seu conjunto:\n');
+    const tuned = [];
+    for (const variant of variants) {
+        const best = sweep(rows, variant, { includeSexy: true });
+        if (!best) continue;
+        tuned.push({
+            variante: variant,
+            hard: best.thresholds.hard,
+            soft: best.thresholds.soft,
+            laion: best.thresholds.laion,
+            'falso+': best.stats.fp,
+            'falso-': best.stats.fn,
+            F1: pct(best.stats.f1)
+        });
+    }
+    console.table(tuned);
+
+    console.log('\nHipótese do "Sexy" — a classe entra no bloqueio automático com o mesmo peso de "Porn".');
+    console.log('Se tirar ela reduzir falso positivo sem criar falso negativo, o problema não é o modelo:\n');
+    const sexyTest = [];
+    for (const variant of variants) {
+        for (const includeSexy of [true, false]) {
+            const s = confusion(rows, variant, CURRENT, { includeSexy });
+            sexyTest.push({
+                variante: variant,
+                Sexy: includeSexy ? 'inclui' : 'exclui',
+                'falso+': s.fp,
+                'falso-': s.fn,
+                F1: pct(s.f1)
+            });
+        }
+    }
+    console.table(sexyTest);
+}
+
+// ---------------------------------------------------------------- main
+
+async function main() {
+    const { dir, variants } = parseArgs(process.argv.slice(2));
+
+    let stat;
+    try {
+        stat = await fs.stat(dir);
+    } catch (_) {
+        console.error(`❌ Pasta não encontrada: ${dir}`);
+        console.error('   Crie a pasta e coloque as imagens de teste nela.');
+        process.exit(1);
+    }
+    if (!stat.isDirectory()) {
+        console.error(`❌ Não é uma pasta: ${dir}`);
+        process.exit(1);
+    }
+
+    console.log(`📂 Avaliando ${dir}`);
+    const { images, skipped } = await listImages(dir);
+
+    if (skipped.length) {
+        console.log(`\n⚠️ ${skipped.length} arquivo(s) ignorado(s) por não serem imagens legíveis:`);
+        for (const s of skipped) console.log(`   ${s.name} — ${s.reason}`);
+    }
+    if (!images.length) {
+        console.error('\n❌ Nenhuma imagem encontrada.');
+        process.exit(1);
+    }
+    console.log(`🖼️ ${images.length} imagem(ns) encontrada(s).\n`);
+
+    const csvPath = path.join(dir, CSV_NAME);
+    const labels = await readExistingLabels(csvPath);
+    if (labels.size) console.log(`🏷️ ${labels.size} rótulo(s) recuperado(s) do ${CSV_NAME}.\n`);
+
+    const model = await nsfw.load('file://./models/inception_v3/', {
+        type: 'inception_v3',
+        size: 299
+    });
+    const analyzer = new ImageAnalyzer(model, { inputSize: 299 });
+
+    console.log('🔍 NSFWJS...');
+    const nsfwScores = await scoreWithNsfwjs(analyzer, images);
+
+    const laionScores = {};
+    for (const variant of variants) {
+        console.log(`🐍 LAION "${variant}" (o primeiro carregamento demora ~90s)...`);
+        laionScores[variant] = await scoreWithLaion(variant, images);
+    }
+
+    const rows = images.map((image) => ({
+        file: image.name,
+        label: labels.get(image.name) || '',
+        scores: nsfwScores.get(image.name),
+        laion: Object.fromEntries(
+            variants.map((v) => [v, laionScores[v].get(image.name) ?? null])
+        )
+    }));
+
+    const header = [
+        'file', 'label',
+        'neutral', 'drawing', 'sexy', 'hentai', 'porn',
+        'nsfwScore', 'nsfwScoreNoSexy',
+        ...variants.map((v) => `laion_${v.replace(/-/g, '_')}`),
+        'decisao_atual', 'portao_atual'
+    ];
+
+    const csvRows = rows.map((row) => {
+        const s = row.scores;
+        const nsfwScore = nsfwScoreFrom(s, { includeSexy: true });
+        const d = s ? decide(nsfwScore, row.laion[variants[0]], CURRENT) : { blocked: null, gate: 'ERRO' };
+        const out = {
+            file: row.file,
+            label: row.label,
+            neutral: s ? s.Neutral.toFixed(6) : '',
+            drawing: s ? s.Drawing.toFixed(6) : '',
+            sexy: s ? s.Sexy.toFixed(6) : '',
+            hentai: s ? s.Hentai.toFixed(6) : '',
+            porn: s ? s.Porn.toFixed(6) : '',
+            nsfwScore: s ? nsfwScore.toFixed(6) : '',
+            nsfwScoreNoSexy: s ? nsfwScoreFrom(s, { includeSexy: false }).toFixed(6) : '',
+            decisao_atual: d.blocked === null ? 'indefinido' : d.blocked ? 'nsfw' : 'ok',
+            portao_atual: d.gate
+        };
+        for (const variant of variants) {
+            const value = row.laion[variant];
+            out[`laion_${variant.replace(/-/g, '_')}`] = value === null ? '' : value.toFixed(6);
+        }
+        return out;
+    });
+
+    await writeCsvAtomic(csvPath, header, csvRows);
+
+    printPerFile(rows, variants);
+    printMetrics(rows, variants);
+
+    console.log(`\n💾 CSV atualizado: ${csvPath}`);
+    if (!labels.size) {
+        console.log('   Preencha a coluna "label" com "nsfw" ou "ok" e rode de novo para ver as métricas.');
+        console.log('   Rótulos já preenchidos nunca são sobrescritos.');
+    }
+    console.log('   Nenhum arquivo foi apagado e nada foi gravado no banco.\n');
+}
+
+main().catch((err) => {
+    console.error('\n❌ Erro:', err?.message || err);
+    process.exit(1);
+});

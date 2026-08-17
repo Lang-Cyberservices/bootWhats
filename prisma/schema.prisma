@@ -63,6 +63,10 @@ model PowerAnimal {
 model MediaHash {
   id        Int      @id @default(autoincrement())
   md5       String   @unique
+  // SHA256 do arquivo original, vindo do protocolo do WhatsApp (msg.rawData.filehash).
+  // É estável entre remetentes, então permite reconhecer uma imagem já julgada
+  // ANTES de baixá-la. Nulo para hashes gravados antes desta coluna existir.
+  fileHash  String?  @unique @db.VarChar(128)
   isNsfw    Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -332,4 +336,36 @@ model GameScore {
 
   @@unique([chatId, authorId, gameType])
   @@map("game_scores")
+}
+
+// Fila de análise de imagens. O bot só baixa, hasheia e enfileira; o processo
+// `bootwhats-analyzer` consome uma linha por vez e grava o veredito aqui.
+// A chave é messageId (e não md5) porque cada mensagem precisa ser apagada
+// individualmente — a deduplicação por md5 acontece na inferência, via MediaHash.
+model MediaAnalysisJob {
+  id           Int       @id @default(autoincrement())
+  messageId    String    @unique @db.VarChar(191)
+  md5          String    @db.VarChar(32)
+  fileHash     String?   @db.VarChar(128)
+  status       String    @default("pending") @db.VarChar(16)
+  filePath     String    @db.VarChar(500)
+  mimetype     String?   @db.VarChar(100)
+  chatId       String    @db.VarChar(191)
+  authorId     String?   @db.VarChar(191)
+  phone        String?   @db.VarChar(32)
+  caption      String?   @db.Text
+  isNsfw       Boolean?
+  predictions  String?   @db.LongText
+  evidencePath String?   @db.VarChar(500)
+  error        String?   @db.Text
+  attempts     Int       @default(0)
+  lockedAt     DateTime?
+  deliveredAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([md5])
+  @@index([fileHash, status])
+  @@map("media_analysis_jobs")
 }

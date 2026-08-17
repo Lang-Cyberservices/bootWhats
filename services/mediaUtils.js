@@ -35,6 +35,20 @@ function getExtension(mimetype) {
     return subtype.split(';')[0].replace('+xml', '');
 }
 
+function decodeMediaBuffer(media) {
+    const rawData = typeof media?.data === 'string' ? media.data.trim() : '';
+    if (!rawData) return null;
+
+    try {
+        const buffer = Buffer.from(rawData, 'base64');
+        return buffer.length ? buffer : null;
+    } catch (_) {
+        return null;
+    }
+}
+
 module.exports = {
-    saveEvidence
+    saveEvidence,
+    getExtension,
+    decodeMediaBuffer
 };
