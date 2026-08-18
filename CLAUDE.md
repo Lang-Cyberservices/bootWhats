@@ -29,18 +29,13 @@ php -S localhost:8080 -t tools/gestao/public tools/gestao/public/router.php
 # Validate a local image against NSFW logic (returns JSON)
 node tools/validate_evidence_md5.js /path/to/image.webp
 
-# Calibrate moderation: score a folder with every NSFWJS model + every LAION
-# variant, write labels.csv, print confusion matrix and threshold sweep. Read-only.
-node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --variants=b32-legacy,b32,l14
+# Calibrate moderation: score a folder with every NSFWJS model, write labels.csv,
+# print confusion matrix and threshold sweep. NSFWJS only — no LAION. Read-only.
+node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --limiar=0,95
 
 # Chess board renderer + rules check (no WhatsApp, no DB)
 node tools/xadrez_preview.js "e4 e5 Nf3 Nc6 Bb5" /tmp/board.png
 node tools/xadrez_preview.js --rules
-
-# LAION scoring (optional, requires Python venv)
-python3 -m venv .venv
-./.venv/bin/pip install torch torchvision
-LAION_PYTHON=./.venv/bin/python node tools/validate_evidence_md5.js /path/to/image.webp
 ```
 
 There are no automated tests (`npm test` exits with an error by design).
@@ -82,8 +77,11 @@ after `JOB_MAX_ATTEMPTS` they become `failed`. The worker exits every
 `ANALYZER_MAX_JOBS_BEFORE_EXIT` jobs so PM2 recycles it and native TF memory is reclaimed.
 
 `ImageAnalyzer` is now a pure engine: `analyze(buffer, { mimetype, isSticker, filePath })` with no
-WhatsApp or DB coupling. `nsfwScore` ≥ 0.95 → NSFW. 0.65–0.95 → second opinion from LAION.
-`isNsfw: null` means undecidable (LAION down) — the job retries and nothing is cached or deleted.
+WhatsApp or DB coupling. `nsfwScore` is `max(Porn, Sexy, Hentai)`; below `NSFW_VISION_GATE` (0.3) it
+passes, and **above the gate the verdict is always Google Vision's** — NSFWJS never blocks on its
+own. `isNsfw: null` means undecidable (Vision down) — the job retries and nothing is cached or
+deleted. Note what that costs: with no local hard block, a missing API key means everything above
+the gate is retried `JOB_MAX_ATTEMPTS` times and then passes, so the worker warns loudly at boot.
 
 **NSFWJS models.** Production loads `models/inception_v3`, which is the v1.0 artifact from
 `GantMan/nsfw_model` — the only Inception v3 ever published, so there is no newer version of it.
@@ -92,20 +90,22 @@ There *is* a newer weights release, v1.1.0 (2020), but it ships a different arch
 package (no download). `tools/nsfw_eval.js` scores both so the choice can be made on data. Upgrading
 the nsfwjs *library* (4.2.1 → 4.4.0) changes no weights and buys no accuracy.
 
-`LaionClient` keeps **one** Python process alive (`tools/laion_score.py --serve`) instead of
-spawning one per image: the CLIP + safety model load costs ~90s, which used to be paid on every
-single image; subsequent scores take ~50ms. It kills the child on `SIGINT`/`SIGTERM`/`exit` and
-shuts it down after `LAION_IDLE_SHUTDOWN_MS` of inactivity to give back ~1.5 GB.
+**Google Vision SafeSearch** (`analyzer/VisionClient.js`) replaced the LAION sidecar — a Python
+process holding ~1.5 GB of CLIP resident, paid for by every restart. It is a plain REST call with
+`fetch`, authenticated by `GOOGLE_VISION_API_KEY` in the query string; the official SDK only accepts
+service accounts and would drag in gRPC/protobuf for one endpoint. Blocking happens when `adult` or
+`racy` reaches `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` (default `LIKELY`, compared
+on the API's own scale, `UNKNOWN` ranked lowest so it never blocks alone).
 
-**LAION variants and the QuickGELU fix.** `LAION_VARIANT` selects a matched pair of CLIP backbone
-and classification head (`VARIANTS` in `tools/laion_score.py`) — they must agree on embedding
-dimension, so one knob controls both. The `openai` CLIP weights were trained with QuickGELU, but
-open_clip 3.x builds plain `ViT-B-32` without it; the embeddings came out wrong and the LAION head,
-trained on correct ones, scored everything near zero. Measured on the same image: **0.0617 with the
-bug, 0.4804 corrected.** That is why production ran `LAION_THRESHOLD=0.03` — it was compensating.
-With the fix that threshold blocks almost everything, so the worker warns at boot when a corrected
-variant runs below 0.1. `b32-legacy` reproduces the bug on purpose, as a baseline for
-`tools/nsfw_eval.js`. Thresholds must be re-derived from data after any variant change.
+Every failure path in `VisionClient` throws, deliberately: that is what `ImageAnalyzer` turns into
+`isNsfw: null`. Returning an optimistic verdict there would silently release content whenever the
+API was down. The image sent to Vision is **not** the 299×299 tensor frame — that one is distorted by
+`fit: 'fill'`. `getSafeSearch` re-renders from the original buffer at ≤1024px JPEG, always a single
+frame (`page: 0`), because Vision handles animated webp/gif poorly.
+
+`tools/nsfw_eval.js` measures NSFWJS alone against a single threshold and writes a pt-BR CSV
+(`;` separator, comma decimals). It does not call Vision — labelling a corpus should not cost API
+requests.
 
 Set `IMAGE_ANALYSIS_MODE=inline` to fall back to analyzing inside the bot process (the pre-queue
 behavior) without a redeploy.
@@ -117,9 +117,9 @@ behavior) without a redeploy.
 | `MediaIngest.js` | Bot side of image moderation: download, MD5, cache check, enqueue |
 | `MediaQueue.js` | All access to `media_analysis_jobs`; shared by bot and worker |
 | `VerdictDispatcher.js` | Applies finished verdicts (delete + warn) in the bot process |
-| `ImageAnalyzer.js` | Pure NSFW scoring engine (sharp + NSFWJS + LAION), no side effects |
+| `ImageAnalyzer.js` | Pure NSFW scoring engine (sharp + NSFWJS + Vision), no side effects |
 | `analyzer/worker.js` | Entry point of the `bootwhats-analyzer` process |
-| `analyzer/LaionClient.js` | Keeps the LAION Python process alive and serialized |
+| `analyzer/VisionClient.js` | Google Vision SafeSearch over REST; throws on every failure |
 | `AuditLogger.js` | Writes structured events to the `logs` table via Prisma |
 | `OracleService.js` | Weekly horoscope-like predictions via Gemini API; cached per phone+week in `oracle_predictions` |
 | `StatsCounter.js` | Buffers message/command counts in memory, flushes to `message_stats` and `message_stats_buckets` periodically |
@@ -179,7 +179,9 @@ See `.env_example` for all options. Critical ones:
 - `MAX_COMMANDS_PER_MINUTE` — per-user rate limit (default 3 per 2-minute window)
 - `IMAGE_ANALYSIS_MODE` — `queue` (default) or `inline` to analyze inside the bot process
 - `MEDIA_SPOOL_DIR` — where the bot parks downloaded media until the worker consumes it
-- `LAION_PYTHON` / `LAION_SCRIPT` / `LAION_IDLE_SHUTDOWN_MS` — the persistent LAION sidecar
+- `GOOGLE_VISION_API_KEY` — SafeSearch second opinion; without it nothing above the gate is decided
+- `NSFW_VISION_GATE` — NSFWJS score above which Vision is consulted (default `0.3`)
+- `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` — block from this likelihood up (default `LIKELY`)
 
 ## Node version
 

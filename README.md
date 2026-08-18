@@ -12,7 +12,7 @@ Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos a
 ## Requisitos
 - Node.js **22 LTS** (recomendado para compatibilidade com `@tensorflow/tfjs-node`).
 - MariaDB 10+ (ou via Docker).
-- Python 3 (opcional, usado para LAION no score de imagens).
+- Chave da API do Google Cloud Vision (`GOOGLE_VISION_API_KEY`) para a segunda opinião do score de imagens.
 - Dependências nativas para `sharp` e `canvas` (instaladas via npm, geralmente já resolvem).
 
 ## Instalação
@@ -73,25 +73,24 @@ node tools/validate_evidence_md5.js /caminho/da/imagem.webp
 Retorna um JSON com campos como:
 - `md5`: hash do arquivo.
 - `pornScore`, `sexyScore`, `hentaiScore`, `neutralScore`, `nsfwScore`.
-- `laionScore` (se aplicável).
-- `blocked`: `true`, `false` ou `null` (quando o LAION falha).
-- `reason`: `NSFWJS`, `LAION`, `LAION_PASS`, `LAION_ERROR`, etc.
+- `safeSearch`: os cinco níveis devolvidos pelo Google Vision (`adult`, `racy`, `violence`, `spoof`, `medical`).
+- `blocked`: `true`, `false` ou `null` (quando o Vision falha).
+- `reason`: `NSFWJS_PASS`, `VISION`, `VISION_PASS`, `VISION_ERROR`, `UNSUPPORTED_FORMAT`.
 
-### Observações sobre o LAION
-Quando `nsfwScore` está entre `0.60` e `0.95`, a lógica atual chama o LAION.
-Se o LAION falhar, a ferramenta retorna `blocked: null` e `reason: LAION_ERROR`.
+### Observações sobre o Google Vision
+Abaixo de `NSFW_VISION_GATE` (padrão `0.3`) o NSFWJS libera sozinho. Acima do portão quem decide é
+sempre o Vision, que bloqueia quando `adult` ou `racy` chega ao nível configurado (padrão `LIKELY`).
+Se o Vision falhar, a ferramenta retorna `blocked: null` e `reason: VISION_ERROR` — e, em produção, o
+job é retentado sem apagar nada.
 
-Para habilitar o LAION localmente, instale `torch` em um venv e aponte o Python:
 ```bash
-python3 -m venv .venv
-./.venv/bin/pip install torch torchvision
-LAION_PYTHON=./.venv/bin/python node tools/validate_evidence_md5.js /caminho/da/imagem.webp
+GOOGLE_VISION_API_KEY=sua_chave node tools/validate_evidence_md5.js /caminho/da/imagem.webp
 ```
 
 Você também pode ajustar:
-- `LAION_PYTHON` (default `python3`)
-- `LAION_SCRIPT` (default `tools/laion_score.py`)
-- `LAION_THRESHOLD` (default `0.5`)
+- `NSFW_VISION_GATE` (default `0.3`)
+- `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` (default `LIKELY`)
+- `GOOGLE_VISION_TIMEOUT_MS` (default `15000`)
 
 ## Estrutura (alto nível)
 - `index.js`: entrada do bot.

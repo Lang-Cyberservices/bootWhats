@@ -6,12 +6,12 @@ const tf = require('@tensorflow/tfjs-node');
 const { connectDatabase, prisma } = require('../database');
 const MediaQueue = require('../MediaQueue');
 const ImageAnalyzer = require('../ImageAnalyzer');
-const LaionClient = require('./LaionClient');
+const VisionClient = require('./VisionClient');
 const { saveEvidence } = require('../mediaUtils');
 
 // Processo separado do bot (PM2: bootwhats-analyzer). Consome a fila
-// media_analysis_jobs UMA por vez. Todo o custo de CPU — sharp, tfjs-node e o
-// Python do LAION — mora aqui, longe do event loop que atende o WhatsApp.
+// media_analysis_jobs UMA por vez. Todo o custo de CPU — sharp e tfjs-node —
+// mora aqui, longe do event loop que atende o WhatsApp.
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const idleMs = MediaQueue.toPositiveInt(process.env.WORKER_IDLE_MS, 1000);
@@ -22,7 +22,7 @@ const staleSweepEveryMs = MediaQueue.toPositiveInt(process.env.JOB_STALE_SWEEP_M
 const evidenceDir = process.env.NSFW_EVIDENCE_DIR || './storage/deleted-media';
 
 let analyzer;
-let laionClient;
+let visionClient;
 let running = true;
 let jobsProcessed = 0;
 let lastStaleSweep = 0;
@@ -81,9 +81,9 @@ async function processJob(job) {
     }
 
     if (verdict.isNsfw === null) {
-        // LAION indisponível: não dá para decidir. Retenta; se esgotar, desiste
+        // Vision indisponível: não dá para decidir. Retenta; se esgotar, desiste
         // sem cachear e sem apagar nada.
-        await MediaQueue.failJob(job.id, verdict.laionError || verdict.reason, {
+        await MediaQueue.failJob(job.id, verdict.visionError || verdict.reason, {
             retryable: true,
             maxAttempts
         });
@@ -163,26 +163,29 @@ async function loop() {
 async function shutdown(code = 0) {
     if (!running) return;
     running = false;
-    laionClient?.stop();
     try {
         await prisma.$disconnect();
     } catch (_) {}
     process.exit(code);
 }
 
-// Um LAION_THRESHOLD muito baixo só fazia sentido com os embeddings quebrados
-// pelo descasamento de QuickGELU: era compensação manual para o detector pegar
-// alguma coisa. Com a variante corrigida, esse valor bloqueia quase tudo.
-function warnIfThresholdUncalibrated() {
-    const variant = laionClient.variant;
-    if (variant === 'b32-legacy') return;
-    if (analyzer.laionThreshold >= 0.1) return;
+// Sem chave não existe segunda opinião, e como o NSFWJS não bloqueia sozinho,
+// TUDO acima do portão vira indecidível: retenta JOB_MAX_ATTEMPTS vezes e passa.
+// Na prática a moderação fica desligada, então o aviso precisa ser barulhento.
+function warnIfVisionMisconfigured() {
+    if (visionClient.enabled) {
+        console.log(
+            `🔎 Vision SafeSearch ativo — portão NSFWJS ${analyzer.visionGate}, ` +
+            `bloqueio em adult>=${analyzer.adultLevel} ou racy>=${analyzer.racyLevel}.`
+        );
+        return;
+    }
 
     console.warn(
-        `\n⚠️  LAION_THRESHOLD=${analyzer.laionThreshold} com a variante "${variant}" (QuickGELU corrigido).\n` +
-        '   Esse limiar foi calibrado para os embeddings antigos, com a ativação errada, e agora\n' +
-        '   tende a bloquear conteúdo legítimo. Recalibre antes de confiar na moderação:\n' +
-        '     node tools/nsfw_eval.js storage/eval\n'
+        '\n⚠️  GOOGLE_VISION_API_KEY não configurada.\n' +
+        `   Toda imagem com score NSFWJS acima de ${analyzer.visionGate} ficará indecidível:\n` +
+        `   o job é retentado ${maxAttempts}x, vira "failed" e a mensagem NÃO é apagada.\n` +
+        '   Configure a chave na .env antes de contar com a moderação.\n'
     );
 }
 
@@ -195,9 +198,9 @@ async function main() {
     });
     console.log('✅ Modelo de IA carregado no worker.');
 
-    laionClient = new LaionClient();
-    analyzer = new ImageAnalyzer(model, { inputSize: 299, laionClient });
-    warnIfThresholdUncalibrated();
+    visionClient = new VisionClient();
+    analyzer = new ImageAnalyzer(model, { inputSize: 299, visionClient });
+    warnIfVisionMisconfigured();
 
     for (const signal of ['SIGINT', 'SIGTERM']) {
         process.on(signal, () => {

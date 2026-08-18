@@ -218,13 +218,13 @@ async function loadInlineAnalyzer() {
     try {
         const nsfw = require('nsfwjs');
         const ImageAnalyzer = require('./services/ImageAnalyzer');
-        const LaionClient = require('./services/analyzer/LaionClient');
+        const VisionClient = require('./services/analyzer/VisionClient');
         const model = await nsfw.load('file://./models/inception_v3/', {
             type: 'inception_v3',
             size: 299
         });
         console.log('✅ Modelo de IA carregado e pronto!');
-        return new ImageAnalyzer(model, { inputSize: 299, laionClient: new LaionClient() });
+        return new ImageAnalyzer(model, { inputSize: 299, visionClient: new VisionClient() });
     } catch (e) {
         // Sem modelo o bot segue funcionando, só sem moderação de imagem.
         console.error('❌ Erro ao carregar o modelo de IA:', e);

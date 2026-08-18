@@ -4,12 +4,20 @@
 /**
  * Avaliador de precisão da moderação de imagens.
  *
- * Pontua uma pasta de imagens com o NSFWJS e com cada variante do LAION, grava
- * tudo num CSV de ida e volta e imprime métricas. É SOMENTE LEITURA: não apaga
- * arquivo, não escreve no banco, não fala com o WhatsApp. O único arquivo que
- * ele escreve é o labels.csv dentro da própria pasta avaliada.
+ * Pontua uma pasta de imagens com o NSFWJS, grava tudo num CSV de ida e volta e
+ * imprime métricas. É SOMENTE LEITURA: não apaga arquivo, não escreve no banco,
+ * não fala com o WhatsApp. O único arquivo que ele escreve é o labels.csv dentro
+ * da própria pasta avaliada.
  *
- *   node tools/nsfw_eval.js [pasta] [--variants=b32-legacy,b32,l14]
+ * O LAION saiu daqui: a avaliação agora mede só o NSFWJS, com um limiar único.
+ * Sem segunda opinião não existe zona cinzenta — a decisão é `nsfwScore >= limiar`.
+ *
+ * Números saem no padrão brasileiro (vírgula decimal), e por isso o CSV usa
+ * ponto-e-vírgula como separador — é o que o Excel/LibreOffice pt-BR espera.
+ * Na leitura o separador é detectado, então um labels.csv antigo (com vírgula)
+ * continua sendo aproveitado.
+ *
+ *   node tools/nsfw_eval.js [pasta] [--models=inception_v3,mobilenet_v2_mid] [--limiar=0,95]
  */
 
 require('dotenv').config();
@@ -19,10 +27,9 @@ const path = require('node:path');
 const sharp = require('sharp');
 const nsfw = require('nsfwjs');
 const ImageAnalyzer = require('../services/ImageAnalyzer');
-const LaionClient = require('../services/analyzer/LaionClient');
 
 const CSV_NAME = 'labels.csv';
-const ALL_VARIANTS = ['b32-legacy', 'b32', 'l14'];
+const CSV_SEPARATOR = ';';
 const CLASSES = ['Neutral', 'Drawing', 'Sexy', 'Hentai', 'Porn'];
 
 // Portão principal. `inception_v3` carrega os pesos de models/ — os mesmos que
@@ -43,16 +50,27 @@ const MODELS = {
 };
 const ALL_MODELS = Object.keys(MODELS);
 
-// Configuração de produção: é a combinação que a coluna de decisão simula.
+// Modelo cuja decisão vai para a coluna do CSV, quando presente na rodada.
 const PROD_MODEL = 'inception_v3';
-const PROD_VARIANT = 'b32-legacy';
 
-// Limiares em produção hoje, usados como linha de base na comparação.
-const CURRENT = {
-    hard: 0.95,
-    soft: 0.65,
-    laion: Number(process.env.LAION_THRESHOLD ?? 0.5)
-};
+// Limiar de bloqueio direto em produção hoje: a linha de base da comparação.
+const DEFAULT_THRESHOLD = 0.95;
+
+// ---------------------------------------------------------------- números BR
+
+// Aceita "0,95" e "0.95": o limiar é digitado à mão e ninguém deveria ter que
+// lembrar qual das duas o script quer.
+function parseNumberBr(raw) {
+    const value = Number(String(raw).trim().replace(',', '.'));
+    return Number.isFinite(value) ? value : null;
+}
+
+function br(value, digits = 4) {
+    if (value === null || value === undefined || Number.isNaN(value)) return '—';
+    return Number(value).toFixed(digits).replace('.', ',');
+}
+
+const pct = (v) => (v === null || v === undefined ? '  —  ' : `${br(v * 100, 1)}%`);
 
 function parseList(arg, prefix, allowed, kind) {
     const values = arg
@@ -69,16 +87,18 @@ function parseList(arg, prefix, allowed, kind) {
 
 function parseArgs(argv) {
     const positional = [];
-    let variants = ALL_VARIANTS;
     let models = ALL_MODELS;
+    let threshold = DEFAULT_THRESHOLD;
 
     for (const arg of argv) {
-        if (arg.startsWith('--variants=')) {
-            variants = parseList(arg, '--variants=', ALL_VARIANTS, 'Variante');
-        } else if (arg.startsWith('--models=')) {
+        if (arg.startsWith('--models=')) {
             models = parseList(arg, '--models=', ALL_MODELS, 'Modelo');
-        } else if (arg === '--no-laion') {
-            variants = [];
+        } else if (arg.startsWith('--limiar=')) {
+            const parsed = parseNumberBr(arg.slice('--limiar='.length));
+            if (parsed === null || parsed <= 0 || parsed > 1) {
+                throw new Error(`Limiar inválido: ${arg}. Use um número entre 0 e 1 (ex.: --limiar=0,95)`);
+            }
+            threshold = parsed;
         } else if (arg.startsWith('--')) {
             throw new Error(`Opção desconhecida: ${arg}`);
         } else {
@@ -88,19 +108,28 @@ function parseArgs(argv) {
 
     if (!models.length) throw new Error('É preciso pelo menos um modelo em --models');
 
-    return { dir: path.resolve(positional[0] || 'storage/eval'), variants, models };
+    return { dir: path.resolve(positional[0] || 'storage/eval'), models, threshold };
 }
 
 // ---------------------------------------------------------------- CSV
+
+// O separador do arquivo lido vem do cabeçalho: escrevemos com ";" (padrão BR),
+// mas um labels.csv gerado antes desta mudança usa "," e não pode ser perdido.
+function detectSeparator(headerLine) {
+    const semicolons = (headerLine.match(/;/g) || []).length;
+    const commas = (headerLine.match(/,/g) || []).length;
+    return semicolons >= commas ? ';' : ',';
+}
 
 function parseCsv(text) {
     const rows = [];
     const lines = String(text).split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return { header: [], rows };
 
-    const header = splitCsvLine(lines[0]);
+    const separator = detectSeparator(lines[0]);
+    const header = splitCsvLine(lines[0], separator);
     for (const line of lines.slice(1)) {
-        const cells = splitCsvLine(line);
+        const cells = splitCsvLine(line, separator);
         const row = {};
         header.forEach((key, i) => {
             row[key] = cells[i] ?? '';
@@ -110,7 +139,7 @@ function parseCsv(text) {
     return { header, rows };
 }
 
-function splitCsvLine(line) {
+function splitCsvLine(line, separator = CSV_SEPARATOR) {
     const cells = [];
     let current = '';
     let quoted = false;
@@ -128,7 +157,7 @@ function splitCsvLine(line) {
             }
         } else if (ch === '"') {
             quoted = true;
-        } else if (ch === ',') {
+        } else if (ch === separator) {
             cells.push(current);
             current = '';
         } else {
@@ -139,20 +168,23 @@ function splitCsvLine(line) {
     return cells.map((c) => c.trim());
 }
 
+// Só o separador do arquivo (";") força aspas — a vírgula agora é decimal e
+// aspas em todo número deixariam o CSV ilegível e sujeito a virar texto no Excel.
 function toCsvCell(value) {
     const str = value === null || value === undefined ? '' : String(value);
-    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    return /["\n;]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 // Rótulos são digitados à mão e não podem ser perdidos por uma rodada
 // interrompida: escreve em arquivo temporário e renomeia por cima.
 async function writeCsvAtomic(filePath, header, rows) {
-    const lines = [header.join(',')];
+    const lines = [header.join(CSV_SEPARATOR)];
     for (const row of rows) {
-        lines.push(header.map((key) => toCsvCell(row[key])).join(','));
+        lines.push(header.map((key) => toCsvCell(row[key])).join(CSV_SEPARATOR));
     }
     const tmpPath = `${filePath}.tmp-${process.pid}`;
-    await fs.writeFile(tmpPath, `${lines.join('\n')}\n`, 'utf8');
+    // BOM: sem ele o Excel abre o CSV como ANSI e estraga os acentos.
+    await fs.writeFile(tmpPath, `﻿${lines.join('\n')}\n`, 'utf8');
     await fs.rename(tmpPath, filePath);
 }
 
@@ -165,7 +197,7 @@ async function readExistingLabels(csvPath) {
         return labels;
     }
 
-    const { rows } = parseCsv(text);
+    const { rows } = parseCsv(text.replace(/^﻿/, ''));
     for (const row of rows) {
         const label = normalizeLabel(row.label);
         if (row.file && label) labels.set(row.file, label);
@@ -241,41 +273,11 @@ async function scoreWithNsfwjs(analyzer, images, fallbackInputSize) {
     return results;
 }
 
-// Um cliente por variante, pontuando TODAS as imagens antes de trocar: carregar
-// o CLIP custa ~90s, então o laço externo precisa ser a variante. Invertido,
-// uma pasta de 50 arquivos levaria horas.
-async function scoreWithLaion(variant, images) {
-    const client = new LaionClient({ variant });
-    const results = new Map();
-
-    try {
-        for (const image of images) {
-            try {
-                results.set(image.name, await client.score(image.filePath));
-            } catch (err) {
-                results.set(image.name, null);
-                console.warn(`\n  ⚠️ ${image.name}: ${err?.message || err}`);
-            }
-            process.stdout.write('.');
-        }
-    } finally {
-        client.stop();
-    }
-
-    process.stdout.write('\n');
-    return results;
-}
-
 // ---------------------------------------------------------------- decisão
 
-// Reproduz a lógica de ImageAnalyzer.analyze: acima do hard bloqueia direto,
-// abaixo do soft libera direto, e só no meio o LAION opina. É por isso que a
-// maioria das decisões nunca chega ao LAION.
-function decide(nsfwScore, laionScore, thresholds) {
-    if (nsfwScore >= thresholds.hard) return { blocked: true, gate: 'HARD_BLOCK' };
-    if (nsfwScore < thresholds.soft) return { blocked: false, gate: 'PASS' };
-    if (laionScore === null || laionScore === undefined) return { blocked: null, gate: 'LAION_INDEF' };
-    return { blocked: laionScore >= thresholds.laion, gate: 'LAION' };
+// Sem o LAION não há zona cinzenta: um limiar único separa bloqueio de liberação.
+function decide(nsfwScore, threshold) {
+    return { blocked: nsfwScore >= threshold };
 }
 
 function nsfwScoreFrom(scores, { includeSexy }) {
@@ -285,19 +287,17 @@ function nsfwScoreFrom(scores, { includeSexy }) {
     return Math.max(...parts);
 }
 
-function confusion(rows, model, variant, thresholds, { includeSexy }) {
-    const stats = { tp: 0, fp: 0, tn: 0, fn: 0, undecided: 0, total: 0 };
+function confusion(rows, model, threshold, { includeSexy }) {
+    const stats = { tp: 0, fp: 0, tn: 0, fn: 0, total: 0 };
 
     for (const row of rows) {
         const scores = row.models[model];
         if (!row.label || !scores) continue;
         stats.total++;
-        const nsfwScore = nsfwScoreFrom(scores, { includeSexy });
-        const { blocked } = decide(nsfwScore, row.laion[variant], thresholds);
+        const { blocked } = decide(nsfwScoreFrom(scores, { includeSexy }), threshold);
         const isNsfw = row.label === 'nsfw';
 
-        if (blocked === null) stats.undecided++;
-        else if (blocked && isNsfw) stats.tp++;
+        if (blocked && isNsfw) stats.tp++;
         else if (blocked && !isNsfw) stats.fp++;
         else if (!blocked && isNsfw) stats.fn++;
         else stats.tn++;
@@ -309,26 +309,16 @@ function confusion(rows, model, variant, thresholds, { includeSexy }) {
     return { ...stats, precision, recall, f1, errors: stats.fp + stats.fn };
 }
 
-function sweep(rows, model, variant, { includeSexy }) {
-    const grid = (from, to, step) => {
-        const values = [];
-        for (let v = from; v <= to + 1e-9; v += step) values.push(Number(v.toFixed(2)));
-        return values;
-    };
-
+// Varredura fina: com um limiar só, o grid inteiro custa quase nada.
+function sweep(rows, model, { includeSexy }) {
     let best = null;
-    for (const hard of grid(0.7, 0.99, 0.05)) {
-        for (const soft of grid(0.3, 0.9, 0.05)) {
-            if (soft >= hard) continue;
-            for (const laion of grid(0.05, 0.95, 0.05)) {
-                const thresholds = { hard, soft, laion };
-                const stats = confusion(rows, model, variant, thresholds, { includeSexy });
-                if (!stats.total) continue;
-                const score = stats.errors + stats.undecided * 0.5;
-                if (!best || score < best.score || (score === best.score && (stats.f1 ?? 0) > (best.stats.f1 ?? 0))) {
-                    best = { score, thresholds, stats };
-                }
-            }
+    for (let raw = 0.05; raw <= 0.99 + 1e-9; raw += 0.01) {
+        const threshold = Number(raw.toFixed(2));
+        const stats = confusion(rows, model, threshold, { includeSexy });
+        if (!stats.total) continue;
+        if (!best || stats.errors < best.stats.errors ||
+            (stats.errors === best.stats.errors && (stats.f1 ?? 0) > (best.stats.f1 ?? 0))) {
+            best = { threshold, stats };
         }
     }
     return best;
@@ -336,22 +326,14 @@ function sweep(rows, model, variant, { includeSexy }) {
 
 // ---------------------------------------------------------------- relatório
 
-const pct = (v) => (v === null || v === undefined ? '  —  ' : `${(v * 100).toFixed(1)}%`);
-const num = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(4));
-
-// Combinação que a coluna de decisão simula: cai para o que estiver disponível
-// se produção não foi incluída na rodada, mas sempre diz qual usou.
-function decisionBasis(models, variants) {
-    return {
-        model: models.includes(PROD_MODEL) ? PROD_MODEL : models[0],
-        variant: variants.includes(PROD_VARIANT) ? PROD_VARIANT : variants[0] || null
-    };
+function decisionModel(models) {
+    return models.includes(PROD_MODEL) ? PROD_MODEL : models[0];
 }
 
-function printPerFile(rows, models, variants) {
-    const basis = decisionBasis(models, variants);
+function printPerFile(rows, models, threshold) {
+    const basis = decisionModel(models);
     console.log('\n═══ Pontuação por arquivo ═══');
-    console.log(`(decisão simulada com ${basis.model} + LAION ${basis.variant || 'ausente'})\n`);
+    console.log(`(decisão simulada com ${basis}, limiar ${br(threshold, 2)})\n`);
 
     const table = rows.map((row) => {
         const entry = {
@@ -360,27 +342,20 @@ function printPerFile(rows, models, variants) {
         };
         for (const model of models) {
             const s = row.models[model];
-            entry[model] = s ? nsfwScoreFrom(s, { includeSexy: true }).toFixed(3) : '—';
-        }
-        for (const variant of variants) {
-            entry[variant] = num(row.laion[variant]);
+            entry[model] = s ? br(nsfwScoreFrom(s, { includeSexy: true }), 3) : '—';
         }
 
-        const s = row.models[basis.model];
+        const s = row.models[basis];
         if (s) {
-            const d = decide(
-                nsfwScoreFrom(s, { includeSexy: true }),
-                basis.variant ? row.laion[basis.variant] : null,
-                CURRENT
-            );
-            entry.decisão = `${d.blocked === null ? 'INDEF' : d.blocked ? 'BLOQUEIA' : 'libera'} (${d.gate})`;
+            const d = decide(nsfwScoreFrom(s, { includeSexy: true }), threshold);
+            entry.decisão = d.blocked ? 'BLOQUEIA' : 'libera';
         }
         return entry;
     });
     console.table(table);
 }
 
-function printMetrics(rows, models, variants) {
+function printMetrics(rows, models, threshold) {
     const labelled = rows.filter((r) => r.label && models.some((m) => r.models[m]));
     if (!labelled.length) {
         console.log('\n═══ Métricas ═══\n');
@@ -393,53 +368,43 @@ function printMetrics(rows, models, variants) {
     const nsfwCount = labelled.filter((r) => r.label === 'nsfw').length;
     console.log(`\n═══ Métricas (${labelled.length} rotulados: ${nsfwCount} nsfw, ${labelled.length - nsfwCount} ok) ═══\n`);
 
-    console.log(`Com os limiares atuais (hard=${CURRENT.hard} soft=${CURRENT.soft} laion=${CURRENT.laion}):\n`);
+    console.log(`Com o limiar atual (${br(threshold, 2)}):\n`);
     const current = [];
     for (const model of models) {
-        for (const variant of variants) {
-            const s = confusion(rows, model, variant, CURRENT, { includeSexy: true });
-            current.push({
-                modelo: model,
-                variante: variant,
-                'falso+': s.fp,
-                'falso-': s.fn,
-                acertos: s.tp + s.tn,
-                indef: s.undecided,
-                precisão: pct(s.precision),
-                recall: pct(s.recall),
-                F1: pct(s.f1)
-            });
-        }
+        const s = confusion(rows, model, threshold, { includeSexy: true });
+        current.push({
+            modelo: model,
+            'falso+': s.fp,
+            'falso-': s.fn,
+            acertos: s.tp + s.tn,
+            precisão: pct(s.precision),
+            recall: pct(s.recall),
+            F1: pct(s.f1)
+        });
     }
     console.table(current);
 
-    console.log('\nMelhores limiares encontrados para o seu conjunto:\n');
+    console.log('\nMelhor limiar encontrado para o seu conjunto:\n');
     const tuned = [];
     for (const model of models) {
-        for (const variant of variants) {
-            const best = sweep(rows, model, variant, { includeSexy: true });
-            if (!best) continue;
-            tuned.push({
-                modelo: model,
-                variante: variant,
-                hard: best.thresholds.hard,
-                soft: best.thresholds.soft,
-                laion: best.thresholds.laion,
-                'falso+': best.stats.fp,
-                'falso-': best.stats.fn,
-                F1: pct(best.stats.f1)
-            });
-        }
+        const best = sweep(rows, model, { includeSexy: true });
+        if (!best) continue;
+        tuned.push({
+            modelo: model,
+            limiar: br(best.threshold, 2),
+            'falso+': best.stats.fp,
+            'falso-': best.stats.fn,
+            F1: pct(best.stats.f1)
+        });
     }
     console.table(tuned);
 
     console.log('\nHipótese do "Sexy" — a classe entra no bloqueio automático com o mesmo peso de "Porn".');
     console.log('Se tirar ela reduzir falso positivo sem criar falso negativo, o problema não é o modelo:\n');
-    const basis = decisionBasis(models, variants);
     const sexyTest = [];
     for (const model of models) {
         for (const includeSexy of [true, false]) {
-            const s = confusion(rows, model, basis.variant, CURRENT, { includeSexy });
+            const s = confusion(rows, model, threshold, { includeSexy });
             sexyTest.push({
                 modelo: model,
                 Sexy: includeSexy ? 'inclui' : 'exclui',
@@ -455,7 +420,7 @@ function printMetrics(rows, models, variants) {
 // ---------------------------------------------------------------- main
 
 async function main() {
-    const { dir, variants, models } = parseArgs(process.argv.slice(2));
+    const { dir, models, threshold } = parseArgs(process.argv.slice(2));
 
     let stat;
     try {
@@ -499,26 +464,16 @@ async function main() {
         );
     }
 
-    const laionScores = {};
-    for (const variant of variants) {
-        console.log(`🐍 LAION "${variant}" (o primeiro carregamento demora ~90s)...`);
-        laionScores[variant] = await scoreWithLaion(variant, images);
-    }
-
     const rows = images.map((image) => ({
         file: image.name,
         label: labels.get(image.name) || '',
         models: Object.fromEntries(
             models.map((m) => [m, modelScores[m].get(image.name) || null])
-        ),
-        laion: Object.fromEntries(
-            variants.map((v) => [v, laionScores[v].get(image.name) ?? null])
         )
     }));
 
-    const basis = decisionBasis(models, variants);
-    const decisionCol = `decisao_${basis.model}_${(basis.variant || 'sem_laion').replace(/-/g, '_')}`;
-    const gateCol = `portao_${basis.model}_${(basis.variant || 'sem_laion').replace(/-/g, '_')}`;
+    const basis = decisionModel(models);
+    const decisionCol = `decisao_${basis}`;
 
     const header = [
         'file', 'label',
@@ -528,8 +483,7 @@ async function main() {
             `${m}_neutral`, `${m}_drawing`, `${m}_sexy`, `${m}_hentai`, `${m}_porn`,
             `${m}_nsfwScore`, `${m}_nsfwScoreNoSexy`
         ]),
-        ...variants.map((v) => `laion_${v.replace(/-/g, '_')}`),
-        decisionCol, gateCol
+        decisionCol
     ];
 
     const csvRows = rows.map((row) => {
@@ -537,40 +491,29 @@ async function main() {
 
         for (const modelName of models) {
             const s = row.models[modelName];
-            out[`${modelName}_neutral`] = s ? s.Neutral.toFixed(6) : '';
-            out[`${modelName}_drawing`] = s ? s.Drawing.toFixed(6) : '';
-            out[`${modelName}_sexy`] = s ? s.Sexy.toFixed(6) : '';
-            out[`${modelName}_hentai`] = s ? s.Hentai.toFixed(6) : '';
-            out[`${modelName}_porn`] = s ? s.Porn.toFixed(6) : '';
-            out[`${modelName}_nsfwScore`] = s ? nsfwScoreFrom(s, { includeSexy: true }).toFixed(6) : '';
-            out[`${modelName}_nsfwScoreNoSexy`] = s ? nsfwScoreFrom(s, { includeSexy: false }).toFixed(6) : '';
+            out[`${modelName}_neutral`] = s ? br(s.Neutral, 6) : '';
+            out[`${modelName}_drawing`] = s ? br(s.Drawing, 6) : '';
+            out[`${modelName}_sexy`] = s ? br(s.Sexy, 6) : '';
+            out[`${modelName}_hentai`] = s ? br(s.Hentai, 6) : '';
+            out[`${modelName}_porn`] = s ? br(s.Porn, 6) : '';
+            out[`${modelName}_nsfwScore`] = s ? br(nsfwScoreFrom(s, { includeSexy: true }), 6) : '';
+            out[`${modelName}_nsfwScoreNoSexy`] = s ? br(nsfwScoreFrom(s, { includeSexy: false }), 6) : '';
         }
 
-        for (const variant of variants) {
-            const value = row.laion[variant];
-            out[`laion_${variant.replace(/-/g, '_')}`] = value === null ? '' : value.toFixed(6);
-        }
-
-        const baseScores = row.models[basis.model];
-        const d = baseScores
-            ? decide(
-                nsfwScoreFrom(baseScores, { includeSexy: true }),
-                basis.variant ? row.laion[basis.variant] : null,
-                CURRENT
-            )
-            : { blocked: null, gate: 'ERRO' };
-        out[decisionCol] = d.blocked === null ? 'indefinido' : d.blocked ? 'nsfw' : 'ok';
-        out[gateCol] = d.gate;
+        const baseScores = row.models[basis];
+        out[decisionCol] = baseScores
+            ? (decide(nsfwScoreFrom(baseScores, { includeSexy: true }), threshold).blocked ? 'nsfw' : 'ok')
+            : '';
 
         return out;
     });
 
     await writeCsvAtomic(csvPath, header, csvRows);
 
-    printPerFile(rows, models, variants);
-    printMetrics(rows, models, variants);
+    printPerFile(rows, models, threshold);
+    printMetrics(rows, models, threshold);
 
-    console.log(`\n💾 CSV atualizado: ${csvPath}`);
+    console.log(`\n💾 CSV atualizado: ${csvPath} (separador "${CSV_SEPARATOR}", decimal com vírgula)`);
     if (!labels.size) {
         console.log('   Preencha a coluna "label" com "nsfw" ou "ok" e rode de novo para ver as métricas.');
         console.log('   Rótulos já preenchidos nunca são sobrescritos.');

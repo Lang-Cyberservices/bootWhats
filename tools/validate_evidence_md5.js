@@ -4,14 +4,13 @@ const path = require('node:path');
 require('dotenv').config();
 const nsfw = require('nsfwjs');
 const ImageAnalyzer = require('../services/ImageAnalyzer');
-const LaionClient = require('../services/analyzer/LaionClient');
+const VisionClient = require('../services/analyzer/VisionClient');
 
 // Valida uma imagem local contra o mesmo motor que o worker usa em produção
-// (services/ImageAnalyzer.js), sem WhatsApp e sem banco. Os limiares aqui são
-// mais rígidos que os do bot de propósito: esta ferramenta serve para inspecionar
-// a zona cinzenta.
-const HARD_THRESHOLD = 0.98;
-const SOFT_THRESHOLD = 0.6;
+// (services/ImageAnalyzer.js), sem WhatsApp e sem banco. O portão aqui é mais
+// baixo que o de produção de propósito: esta ferramenta serve para inspecionar a
+// zona em que o Vision entra em cena.
+const VISION_GATE = Number(process.env.NSFW_VISION_GATE ?? 0.3);
 
 async function main() {
   const inputPath = process.argv[2];
@@ -29,12 +28,10 @@ async function main() {
     size: 299
   });
 
-  const laionClient = new LaionClient();
   const analyzer = new ImageAnalyzer(model, {
     inputSize: 299,
-    laionClient,
-    hardThreshold: HARD_THRESHOLD,
-    softThreshold: SOFT_THRESHOLD
+    visionClient: new VisionClient(),
+    visionGate: VISION_GATE
   });
 
   const ext = path.extname(resolvedPath).toLowerCase();
@@ -43,17 +40,15 @@ async function main() {
     filePath: resolvedPath
   });
 
-  laionClient.stop();
-
   const getScore = (className) => {
     const found = verdict.predictions.find((p) => p.className === className);
     return found ? found.probability : 0;
   };
 
-  // O score do LAION é reportado num campo próprio; tirar da lista mantém
+  // Os níveis do Vision são reportados em `safeSearch`; tirá-los da lista mantém
   // `predictions` como a saída crua do NSFWJS.
   const sortedPredictions = verdict.predictions
-    .filter((p) => p.className !== 'LAION')
+    .filter((p) => !String(p.className).startsWith('VISION_'))
     .sort((a, b) => b.probability - a.probability);
 
   const output = {
@@ -64,9 +59,11 @@ async function main() {
     sexyScore: getScore('Sexy'),
     hentaiScore: getScore('Hentai'),
     neutralScore: getScore('Neutral'),
-    laionThreshold: analyzer.laionThreshold,
-    laionScore: verdict.laionScore,
-    laionError: verdict.laionError,
+    visionGate: analyzer.visionGate,
+    visionAdultLevel: analyzer.adultLevel,
+    visionRacyLevel: analyzer.racyLevel,
+    safeSearch: verdict.safeSearch,
+    visionError: verdict.visionError,
     blocked: verdict.isNsfw,
     reason: verdict.reason,
     predictions: sortedPredictions

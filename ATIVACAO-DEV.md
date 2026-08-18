@@ -30,23 +30,21 @@ O que entra:
 **Todas têm valor padrão no código**, então o bot sobe sem você tocar no `.env`. Mas duas decisões
 são suas:
 
-### `LAION_VARIANT` — atenção, muda comportamento
+### `GOOGLE_VISION_API_KEY` — sem ela a moderação não decide nada
 
-O padrão passou a ser `b32`, com o QuickGELU corrigido. Isso **altera a escala dos scores do LAION**
-em relação ao que roda hoje. Na mesma imagem de teste: 0,0617 antes, 0,4804 depois.
+O NSFWJS não bloqueia sozinho: acima de `NSFW_VISION_GATE` quem decide é o Google Vision. Sem chave,
+todo job nessa faixa é retentado `JOB_MAX_ATTEMPTS` vezes, vira `failed` e a mensagem **não** é
+apagada. O worker avisa no boot.
 
-Se quiser congelar o comportamento antigo enquanto calibra:
+### `NSFW_VISION_GATE` e os níveis do Vision
 
-```
-LAION_VARIANT=b32-legacy
-```
+`NSFW_VISION_GATE` (padrão `0.3`) é o portão: abaixo dele o NSFWJS libera sem gastar requisição.
+`GOOGLE_VISION_ADULT_LEVEL` e `GOOGLE_VISION_RACY_LEVEL` (padrão `LIKELY`) definem a partir de qual
+nível da escala do Google se bloqueia — `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`,
+`VERY_LIKELY`, do mais fraco ao mais forte.
 
-### `LAION_THRESHOLD` — precisa ser recalibrado
-
-O valor atual (`0.03`) foi escolhido para compensar os embeddings quebrados. Com a variante
-corrigida ele bloqueia quase tudo. O worker avisa no boot se detectar essa combinação.
-
-Não existe limiar recomendado pelo LAION — o número tem que sair da medição (passo 5).
+Baixar o portão significa mais requisições e mais custo; subir significa confiar mais no NSFWJS
+sozinho para liberar. O número sai da medição (passo 5).
 
 ### Opcionais
 
@@ -56,7 +54,7 @@ Estão todas documentadas no `.env_example`. As que valem conhecer:
 |---|---|---|
 | `IMAGE_ANALYSIS_MODE` | `queue` | `inline` volta ao comportamento antigo, analisando dentro do bot. Escape de emergência. |
 | `MEDIA_SPOOL_DIR` | `./storage/spool` | Onde o bot guarda a mídia até o worker consumir. Criada sozinha. |
-| `LAION_IDLE_SHUTDOWN_MS` | `1800000` | Desliga o Python após 30 min sem uso e devolve ~1,5 GB. `0` nunca desliga. |
+| `GOOGLE_VISION_TIMEOUT_MS` | `15000` | Teto da chamada ao Vision. Estourou, o job é retentado. |
 | `ANALYZER_MAX_JOBS_BEFORE_EXIT` | `500` | Worker sai a cada N jobs para zerar memória nativa do TF; o PM2 sobe de volta. |
 | `CLIENT_DESTROY_TIMEOUT_MS` | `30000` | Espera pelo `client.destroy()` antes de matar o Chromium à força. |
 
@@ -118,38 +116,35 @@ que você suspeita terem sido bloqueadas por engano. Sem os dois lados a matriz 
 positivo, que é provavelmente o problema principal.
 
 ```bash
-node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --variants=b32-legacy,b32,l14
+node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --limiar=0,3
 ```
 
 A primeira rodada gera `storage/eval/labels.csv` com todos os scores e a coluna `label` vazia.
 Preencha com `nsfw` ou `ok` e rode de novo — aí saem matriz de confusão, varredura de limiares e o
-teste da hipótese do `Sexy`. Rótulo já preenchido nunca é sobrescrito.
+teste da hipótese do `Sexy`. Rótulo já preenchido nunca é sobrescrito. O CSV sai no padrão pt-BR:
+separador `;` e vírgula decimal, para abrir direto no Excel.
 
-Cada variante do LAION carrega o CLIP uma vez, o que leva cerca de 90 s. Três variantes = uns 5
-minutos de espera antes dos resultados, independente do tamanho da pasta.
+O avaliador **não chama o Vision** — rotular um corpus não deve custar requisição. Ele mede o
+NSFWJS sozinho, que é justamente o que define o portão `NSFW_VISION_GATE`: um limiar mais baixo
+manda mais imagem para a API.
 
-### O que cada eixo compara
-
-**`--models`** é o portão principal, que decide a maioria dos casos sozinho:
+### O que comparar
 
 | Modelo | O que é |
 |---|---|
 | `inception_v3` | v1.0 do `nsfw_model`, o que produção usa hoje. Não existe versão mais nova dele. |
 | `mobilenet_v2_mid` | release v1.1.0 (2020) do mesmo autor, arquitetura diferente. Vem empacotado no `nsfwjs`, sem download. |
 
-**`--variants`** é a segunda opinião do LAION, consultada só na faixa cinzenta (`nsfwScore` entre
-0,65 e 0,95). Ver a tabela do passo 2.
-
-Ambos os modelos são de 2019–2020. Se nenhum dos dois resolver, o caminho seria um classificador
-ViT atual — fora do escopo desta branch.
-
-**Aviso sobre a variante `l14`:** ela baixa ~890 MB de pesos na primeira execução e o processo chega
-a **2,9 GB de RSS**. Confira a RAM antes de cogitar isso em produção.
+Ambos são de 2019–2020. Como agora eles só decidem a liberação (o bloqueio é sempre do Vision), o
+que importa medir neles é o falso negativo: imagem imprópria que fica abaixo do portão nunca chega
+a ser vista pelo Google.
 
 ## 6. Antes de mandar para produção
 
 - [ ] Limiares escolhidos pela medição do passo 5 e gravados no `.env` do servidor
-- [ ] Decidir `LAION_VARIANT` (`b32-legacy` mantém o comportamento atual; `b32` é o corrigido)
+- [ ] `GOOGLE_VISION_API_KEY` no `.env` do servidor, com a Vision API habilitada no projeto do GCP
+      e faturamento ativo — sem isso a moderação não bloqueia nada
+- [ ] Decidir `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` (padrão `LIKELY` nos dois)
 - [ ] **Rodar `pm2 delete bootwhats` no servidor, uma única vez.** A entrada antiga foi criada com
       `pm2 start index.js --name bootwhats` e ficaria pendurada ao lado das duas do
       `ecosystem.config.js`. O deploy automático já foi ajustado para
@@ -161,18 +156,20 @@ a **2,9 GB de RSS**. Confira a RAM antes de cogitar isso em produção.
 quebrar em 24+. Rodou normal no 24 durante os testes, mas se aparecer erro estranho de módulo nativo
 é o primeiro lugar para olhar.
 
-**Rede.** O sidecar do LAION baixa os pesos do Hugging Face e a cabeça de classificação do
-`raw.githubusercontent.com` na primeira execução de cada variante. Já vem com retry e backoff — o
-GitHub devolve 429/503 com facilidade. Depois de cacheado o único acesso externo é uma checagem no
-Hub ao subir; `HF_HUB_OFFLINE=1` elimina até isso.
+**Imagens passaram a sair da máquina.** Isto mudou com o Vision e vale dizer em voz alta: toda
+imagem acima do portão é enviada ao Google, redimensionada para no máximo 1024px e em JPEG. Antes,
+com o LAION local, nada trafegava além do download dos pesos. Quem baixa o portão aumenta o volume
+de imagens de terceiros enviadas a uma API externa — é uma decisão de privacidade, não só de custo.
 
-**Nenhuma imagem sai da máquina.** O que trafega é só download de modelo.
+**Custo.** O SafeSearch é cobrado por requisição (as primeiras 1.000/mês são gratuitas). O cache de
+`media_hashes`, por `fileHash` e por md5, é o que segura a conta: imagem repetida não é reanalisada.
+No corpus de referência (254 imagens do dump), 18 ficaram acima de 0,3 — cerca de 7%.
 
 ## Fora de escopo, para depois
 
 - O `Sexy` entra no bloqueio automático com o mesmo peso de `Porn`. O passo 5 responde se é a origem
   dos falsos positivos; se for, a correção não envolve trocar modelo.
-- O `nsfw_testset.zip` do LAION, anotado à mão pelos autores do modelo, daria um limiar de referência
-  independente das suas imagens.
 - Trocar o portão principal por um classificador ViT moderno. Os dois modelos disponíveis hoje são de
-  2019 e 2020; o sidecar persistente já tornou um modelo maior viável em custo.
+  2019 e 2020, e agora eles só decidem o que **não** vai para o Vision.
+- Guardar o nível do Vision no `media_hashes` (hoje o cache só grava o booleano), para dar para
+  auditar por que um md5 foi bloqueado sem procurar o job correspondente.
