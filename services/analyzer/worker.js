@@ -76,6 +76,7 @@ async function processJob(job) {
     if (verdict.skipped) {
         // Formato não suportado: nada a decidir e nada a cachear (o md5 pode
         // reaparecer num container que o sharp entenda).
+        if (isDev) console.log(`Job ${job.id} (${job.md5.slice(0, 8)}): formato não suportado — ignorado, mensagem mantida.`);
         await MediaQueue.failJob(job.id, verdict.reason, { retryable: false, maxAttempts });
         return;
     }
@@ -83,6 +84,12 @@ async function processJob(job) {
     if (verdict.isNsfw === null) {
         // Vision indisponível: não dá para decidir. Retenta; se esgotar, desiste
         // sem cachear e sem apagar nada.
+        if (isDev) {
+            console.log(
+                `Job ${job.id} (${job.md5.slice(0, 8)}): indecidível (${verdict.reason}) — ` +
+                `${verdict.visionError || 'sem detalhe'}. Retentando (tentativa ${job.attempts + 1}/${maxAttempts}), mensagem mantida por enquanto.`
+            );
+        }
         await MediaQueue.failJob(job.id, verdict.visionError || verdict.reason, {
             retryable: true,
             maxAttempts
@@ -117,8 +124,10 @@ async function finish(job, buffer, verdict) {
     await MediaQueue.releaseSpoolFile(job);
 
     if (isDev) {
+        const acao = verdict.isNsfw ? `APAGADA (evidência: ${evidencePath || 'não salva'})` : 'mantida';
         console.log(
-            `Job ${job.id} (${job.md5.slice(0, 8)}): ${verdict.isNsfw ? 'NSFW' : 'ok'} — ${verdict.reason}`
+            `Job ${job.id} (${job.md5.slice(0, 8)}): ${verdict.isNsfw ? 'NSFW' : 'ok'} — ${verdict.reason} — ` +
+            `nsfwScore=${verdict.nsfwScore?.toFixed?.(3) ?? verdict.nsfwScore} — imagem ${acao}`
         );
     }
 }

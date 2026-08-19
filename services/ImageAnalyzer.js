@@ -54,7 +54,14 @@ class ImageAnalyzer {
         const nsfwScore = Math.max(pornScore, sexyScore, hentaiScore);
 
         if (nsfwScore < this.visionGate) {
+            if (this.isDev) {
+                console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} < portão ${this.visionGate} — liberado sem consultar o Vision.`);
+            }
             return this.result({ isNsfw: false, reason: 'NSFWJS_PASS', predictions, nsfwScore });
+        }
+
+        if (this.isDev) {
+            console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} >= portão ${this.visionGate} — consultando o Vision.`);
         }
 
         let safeSearch;
@@ -63,6 +70,9 @@ class ImageAnalyzer {
         } catch (err) {
             // Sem segunda opinião não dá para decidir: não cacheia, não apaga.
             // O worker trata como falha retentável.
+            if (this.isDev) {
+                console.log('Vision: falhou —', err?.message || String(err));
+            }
             return this.result({
                 isNsfw: null,
                 reason: 'VISION_ERROR',
