@@ -322,6 +322,35 @@ model GameXadrez {
   @@map("game_xadrez")
 }
 
+// Wordle multiplayer. `answer` guarda a grafia do banco (com acento) só para a
+// revelação no fim; toda a comparação roda sobre `answerLetters`, normalizado e
+// sem espaços. Os palpites vivem num JSON porque nada consulta um palpite
+// isolado — eles são lidos em bloco para redesenhar o tabuleiro e pontuar.
+model GameLetreco {
+  id                    Int       @id @default(autoincrement())
+  chatId                String    @db.VarChar(255)
+  category              String    @db.VarChar(20)
+  status                String    @db.VarChar(20)
+  answer                String    @db.VarChar(255)
+  answerLetters         String    @db.VarChar(255)
+  answerRef             String?   @db.VarChar(255)
+  wordLengths           String    @db.Text
+  guesses               String    @db.Text
+  attempts              Int       @default(0)
+  lastPlayerId          String?   @db.VarChar(255)
+  lastPlayedAt          DateTime?
+  currentRoundMessageId String?   @db.VarChar(255)
+  roundMessageIds       String    @db.Text
+  startedBy             String    @db.VarChar(255)
+  winnerId              String?   @db.VarChar(255)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  finishedAt            DateTime?
+
+  @@index([chatId, status])
+  @@map("game_letreco")
+}
+
 model GameScore {
   id            Int      @id @default(autoincrement())
   chatId        String   @db.VarChar(255)

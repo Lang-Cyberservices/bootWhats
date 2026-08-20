@@ -89,13 +89,14 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null) {
         this.auditLogger = auditLogger;
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
         this.forcaGame = forcaGame;
         this.blockedCommands = blockedCommands;
         this.xadrezGame = xadrezGame;
+        this.letrecoGame = letrecoGame;
         this.client = null;
         this.getBotReadyAt = null;
         this.userIdsCache = new Map();
@@ -360,6 +361,10 @@ class CommandHandler {
 
         if (command === '/xadrez' || command === '/chess') {
             return this.handleXadrez(msg, chat, args);
+        }
+
+        if (command === '/letreco') {
+            return this.handleLetreco(msg, chat, args);
         }
 
         if (command === '/pais') {
@@ -1100,6 +1105,20 @@ class CommandHandler {
         }
     }
 
+    async handleLetreco(msg, chat, args) {
+        if (!this.letrecoGame) {
+            await msg.reply('❌ O letreco ainda não está disponível.');
+            return;
+        }
+
+        try {
+            await this.letrecoGame.startGame(msg, chat, args);
+        } catch (err) {
+            console.error('Erro no /letreco:', err?.message || err);
+            await msg.reply('❌ Não consegui iniciar o letreco agora.');
+        }
+    }
+
     sanitizeDescription(text, maxLen = 280) {
         if (!text) return '';
         const clean = String(text)
@@ -1664,9 +1683,11 @@ class CommandHandler {
 
     async handleEstatisticas(msg, chat, args) {
         const raw = String(args?.[0] || '').toLowerCase().trim();
-        // `/rank xadrez` não olha para as estatísticas de mensagens: é um
-        // ranking próprio, montado em sendGameRank().
-        const gameMode = raw === 'xadrez' || raw === 'chess' ? 'xadrez' : null;
+        // `/rank xadrez` e `/rank letreco` não olham para as estatísticas de
+        // mensagens: são rankings próprios, montados em sendGameRank().
+        const gameMode = raw === 'xadrez' || raw === 'chess' ? 'xadrez'
+            : raw === 'letreco' ? 'letreco'
+                : null;
         const mode = gameMode ? null : (raw === 'diario' || raw === 'daily' ? 'day'
             : raw === 'semanal' || raw === 'weekly' ? 'week'
                 : raw === 'mensal' || raw === 'monthly' ? 'month'
@@ -1693,7 +1714,7 @@ class CommandHandler {
             return;
         }
 
-        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo', 'xadrez']);
+        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo', 'xadrez', 'letreco']);
         if (rateLimitedAttributes.has(attributeKey)) {
             const windowStart = new Date(now.getTime() - 30 * 60 * 1000);
 
@@ -1723,6 +1744,7 @@ class CommandHandler {
                 if (first === 'mensal' || first === 'monthly') return 'mensal';
                 if (first === 'semanal' || first === 'weekly') return 'semanal';
                 if (first === 'xadrez' || first === 'chess') return 'xadrez';
+                if (first === 'letreco') return 'letreco';
                 return 'sem_atributo';
             };
 
@@ -1901,7 +1923,18 @@ class CommandHandler {
     }
 
     async sendGameRank(msg, chat, gameType) {
-        const titles = { xadrez: '♟️ *Xadrez — pontuação*' };
+        const titles = {
+            xadrez: '♟️ *Xadrez — pontuação*',
+            letreco: '🟩 *Letreco — pontuação*'
+        };
+        const emptyMessages = {
+            xadrez: '♟️ Ninguém pontuou no xadrez neste grupo ainda. Use */xadrez* para abrir uma partida.',
+            letreco: '🟩 Ninguém pontuou no letreco neste grupo ainda. Use */letreco* para começar uma partida.'
+        };
+        const footers = {
+            xadrez: '_Vitória vale 30 pontos, empate 15. Partidas com menos de 10 lances não contam._',
+            letreco: '_Quem acerta ganha 5 pontos + 3 por tentativa que sobrou; cada palpite válido vale 1 ponto (até 5). Partida jogada por uma pessoa só vale metade._'
+        };
 
         try {
             const scores = await prisma.gameScore.findMany({
@@ -1911,7 +1944,7 @@ class CommandHandler {
             });
 
             if (!scores.length) {
-                await msg.reply('♟️ Ninguém pontuou no xadrez neste grupo ainda. Use */xadrez* para abrir uma partida.');
+                await msg.reply(emptyMessages[gameType] || `🎮 Ninguém pontuou em ${gameType} neste grupo ainda.`);
                 return;
             }
 
@@ -1920,7 +1953,7 @@ class CommandHandler {
                 const label = await this.resolveScoreLabel(score.authorId);
                 lines.push(`${i + 1}. ${label} — ${this.formatScoreLine(score)}`);
             }
-            lines.push('', `_Vitória vale 30 pontos, empate 15. Partidas com menos de 10 lances não contam._`);
+            if (footers[gameType]) lines.push('', footers[gameType]);
 
             await msg.reply(lines.join('\n'));
         } catch (err) {

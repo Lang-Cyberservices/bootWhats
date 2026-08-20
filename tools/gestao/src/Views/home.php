@@ -550,7 +550,7 @@
                     </ul>
                     <h3>Detalhes</h3>
                     <p>Mostra dois top 5: <strong>quem mais fala</strong> (mensagens) e <strong>quem mais usa o bot</strong> (comandos).</p>
-                    <p>No ranking geral aparece também o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca e no xadrez, com o total de vitórias, empates e derrotas.</p>
+                    <p>No ranking geral aparece também o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
                         <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo + 🎮 placar de jogos</div></div>
@@ -738,6 +738,33 @@
                         <div class="ex"><div class="in">/xadrez</div><div class="out">♟️ tabuleiro inicial — Jogador 2: aguardando...</div></div>
                         <div class="ex"><div class="in">xadrez</div><div class="out">🎲 cores sorteadas — ⚪ Brancas: Ana · ⚫ Pretas: Bia</div></div>
                         <div class="ex"><div class="in">e2 e4</div><div class="out">♟️ Jogada 1 — tabuleiro novo marcando o próximo jogador</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🟩 /letreco</span>
+                <span class="desc">Letreco (estilo Wordle) em grupo, com tabuleiro em imagem.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/letreco</code> — <strong>sorteia a categoria</strong> e inicia a partida.</li>
+                        <li><code>/letreco dicionario</code> — uma palavra do dicionário, de 5 a 8 letras.</li>
+                        <li><code>/letreco filme</code> — um filme da base do bot.</li>
+                        <li><code>/letreco pais</code> — um país.</li>
+                        <li>Responder a imagem com o palpite — <code>PORTA</code>, <code>porta</code> ou <code>pórta</code> dão no mesmo.</li>
+                        <li><code>/letreco encerrar</code> — encerra a partida (quem começou ou um administrador do grupo).</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez, e o palpite só vale como <strong>resposta à imagem mais recente</strong> do tabuleiro — responder a um tabuleiro antigo não consome tentativa. São <strong>10 tentativas</strong> no total, compartilhadas pelo grupo: cada palpite pinta as letras de <strong>verde</strong> (letra certa no lugar certo), <strong>amarelo</strong> (letra certa no lugar errado) ou <strong>vermelho</strong> (letra que não existe). Letras repetidas só ficam coloridas na quantidade em que aparecem na resposta.</p>
+                    <p>Depois de jogar, a vez passa para outra pessoa: quem acabou de jogar só pode jogar de novo <strong>1 minuto</strong> depois, ou assim que outra pessoa jogar. Palpites com número de letras diferente da resposta não consomem tentativa nem mudam a vez. Espaços e acentos não entram na contagem, e nas categorias de filme e país o tabuleiro mostra a separação entre as palavras — o que revela o tamanho de cada uma, mas nenhuma letra.</p>
+                    <p>Quem acerta ganha <strong>5 pontos mais 3 por tentativa que sobrou</strong> (32 pontos acertando de primeira, 5 acertando na última), e cada palpite válido vale 1 ponto por pessoa, até 5. Se ninguém acertar em 10 tentativas, ficam só os pontos por palpite. Partida jogada por <strong>uma pessoa sozinha vale metade</strong>. Tudo soma no placar de jogos do <code>/rank</code>, junto com a forca e o xadrez, e o ranking só do jogo sai em <code>/rank letreco</code>. A partida sobrevive a reinícios do bot e é encerrada sem pontos depois de 6 horas parada.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/letreco</div><div class="out">🟩 sorteia a categoria e manda o tabuleiro vazio</div></div>
+                        <div class="ex"><div class="in">/letreco pais</div><div class="out">🟩 Letreco — País — tabuleiro com o espaço de cada palavra</div></div>
+                        <div class="ex"><div class="in">porta</div><div class="out">🟩 tabuleiro novo com as letras coloridas e o nome de quem jogou</div></div>
                     </div>
                 </div>
             </button>
