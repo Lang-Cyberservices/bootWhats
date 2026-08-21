@@ -2,6 +2,7 @@ const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('../database');
 const { getSenderId } = require('../messageUtils');
 const { renderBoard } = require('./letrecoBoard');
+const { buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
 const {
     normalizeText,
     extractLetters,
@@ -19,11 +20,11 @@ const SAME_PLAYER_COOLDOWN_MS = Number(process.env.LETRECO_COOLDOWN_MS) || 60_00
 const LETRECO_TIMEOUT_MS = Number(process.env.LETRECO_TIMEOUT_MS) || 6 * 60 * 60_000;
 const SWEEP_INTERVAL_MS = 10 * 60_000;
 
-// Vitória rápida vale mais; participar vale pouco, mas vale.
-const POINTS_WIN_BASE = 5;
-const POINTS_PER_REMAINING = 3;
-const POINTS_PER_GUESS = 1;
-const MAX_POINTS_PER_GUESS = 5;
+// Pontos por letra descoberta primeiro: amarelo (letra existe, posição errada)
+// vale menos que verde (posição certa). Cada ocorrência da letra na resposta
+// é premiada separadamente.
+const POINTS_PRESENT = 1;
+const POINTS_CORRECT = 2;
 
 const DICT_MIN_LETTERS = 5;
 const DICT_MAX_LETTERS = 8;
@@ -474,11 +475,9 @@ class LetrecoGame {
 
     async renderGameImage(game, { winnerLabel = null } = {}) {
         const buffer = await renderBoard({
-            category: game.category,
             status: game.status,
             wordLengths: game.wordLengths,
             rows: this.boardRows(game),
-            maxAttempts: MAX_ATTEMPTS,
             answer: game.status === 'active' ? null : game.answer,
             winnerLabel
         });
@@ -550,7 +549,9 @@ class LetrecoGame {
         await this.persistGame(game);
         this.activeGamesByChat.delete(game.chatId);
 
-        const scoreLines = await this.finalizeScores(game);
+        // Como no /forca: só quem vence pontua. Ninguém acertando, os pontos
+        // desta partida são descartados.
+        const scoreLines = won ? await this.finalizeScores(game) : [];
 
         const lines = [];
         let mentions = [];
@@ -564,8 +565,10 @@ class LetrecoGame {
 
         lines.push(`Resposta: *${game.answer}*`, `Tentativas utilizadas: ${game.guesses.length}/${MAX_ATTEMPTS}`);
 
-        if (scoreLines.length) {
+        if (won) {
             lines.push('', '🏆 *Pontuação desta partida:*', ...scoreLines);
+        } else {
+            lines.push('', 'Os pontos desta partida foram descartados.');
         }
 
         await this.sendFinalBoard(chat, game, {
@@ -573,47 +576,93 @@ class LetrecoGame {
             mentions,
             winnerLabel
         });
+
+        await this.sendAnswerInfo(chat, game);
     }
 
-    // Vitória rápida vale mais; cada palpite válido rende um ponto (com teto).
-    // Partida jogada por uma pessoa só vale metade — senão bastaria abrir e
-    // acertar sozinho para farmar o ranking.
-    computeScores(game) {
-        const guessCount = new Map();
-        for (const guess of game.guesses) {
-            guessCount.set(guess.playerId, (guessCount.get(guess.playerId) || 0) + 1);
-        }
-        if (!guessCount.size) return [];
-
-        const solo = guessCount.size === 1;
-        const remaining = MAX_ATTEMPTS - game.guesses.length;
-        const won = game.status === 'won';
-        const scores = [];
-
-        for (const [playerId, count] of guessCount.entries()) {
-            let points = Math.min(count, MAX_POINTS_PER_GUESS) * POINTS_PER_GUESS;
-            if (won && playerId === game.winnerId) {
-                points += POINTS_WIN_BASE + (POINTS_PER_REMAINING * remaining);
+    async sendAnswerInfo(chat, game) {
+        try {
+            if (game.category === 'filme') {
+                const { caption, media } = await buildMovieMessage(game.answerRef, game.answer);
+                if (media) {
+                    await chat.sendMessage(media, { caption });
+                } else {
+                    await chat.sendMessage(caption);
+                }
+                return;
             }
-            if (solo) points = Math.floor(points / 2);
 
-            scores.push({
-                playerId,
-                points,
-                guesses: count,
-                isWinner: won && playerId === game.winnerId
-            });
+            if (game.category === 'pais') {
+                const text = await buildCountryInfo(game.answer, game.answerRef);
+                await chat.sendMessage(text);
+                return;
+            }
+
+            const text = await buildDictionaryInfo(game.answer);
+            await chat.sendMessage(text);
+        } catch (err) {
+            console.error('Erro ao enviar descrição do letreco:', err?.message || err);
         }
+    }
+
+    // 1 ponto para quem primeiro descobre que uma letra existe na resposta
+    // (amarelo), 2 pontos para quem primeiro acerta a posição certa dela
+    // (verde). Cada ocorrência da letra na resposta é premiada separadamente,
+    // então uma letra repetida rende pontos mais de uma vez. Reprocessa os
+    // palpites em ordem cronológica para achar quem chegou primeiro em cada
+    // descoberta — não há bônus por quantidade de palpites nem por vitória.
+    computeScores(game) {
+        const points = new Map();
+        const addPoints = (playerId, amount) => {
+            points.set(playerId, (points.get(playerId) || 0) + amount);
+        };
+
+        const totalCount = new Map();
+        for (const letter of game.answerLetters) {
+            totalCount.set(letter, (totalCount.get(letter) || 0) + 1);
+        }
+
+        const positionDiscovered = new Set();
+        const discoveredCount = new Map();
+
+        for (const guess of game.guesses) {
+            const tiles = charsToTiles(guess.tiles);
+            const letters = guess.letters;
+
+            for (let i = 0; i < tiles.length; i++) {
+                const letter = letters[i];
+
+                if (tiles[i] === 'correct') {
+                    if (!positionDiscovered.has(i)) {
+                        positionDiscovered.add(i);
+                        discoveredCount.set(letter, (discoveredCount.get(letter) || 0) + 1);
+                        addPoints(guess.playerId, POINTS_CORRECT);
+                    }
+                    continue;
+                }
+
+                if (tiles[i] === 'present') {
+                    const discovered = discoveredCount.get(letter) || 0;
+                    if (discovered < (totalCount.get(letter) || 0)) {
+                        discoveredCount.set(letter, discovered + 1);
+                        addPoints(guess.playerId, POINTS_PRESENT);
+                    }
+                }
+            }
+        }
+
+        const won = game.status === 'won';
+        const scores = [...points.entries()].map(([playerId, total]) => ({
+            playerId,
+            points: total,
+            isWinner: won && playerId === game.winnerId
+        }));
 
         return scores.sort((a, b) => b.points - a.points);
     }
 
     async finalizeScores(game) {
-        // Partida expirada ou encerrada na mão não pontua.
-        if (game.status !== 'won' && game.status !== 'lost') return [];
-
         const scores = this.computeScores(game);
-        const lost = game.status === 'lost';
         const lines = [];
 
         for (const score of scores) {
@@ -635,13 +684,12 @@ class LetrecoGame {
                         gameType: 'letreco',
                         totalPoints: score.points,
                         wins: score.isWinner ? 1 : 0,
-                        losses: lost ? 1 : 0,
+                        losses: 0,
                         matchesPlayed: 1
                     },
                     update: {
                         totalPoints: { increment: score.points },
                         wins: score.isWinner ? { increment: 1 } : undefined,
-                        losses: lost ? { increment: 1 } : undefined,
                         matchesPlayed: { increment: 1 }
                     }
                 });

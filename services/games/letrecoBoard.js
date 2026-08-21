@@ -7,8 +7,8 @@ const { createCanvas } = require('canvas');
 
 const CANVAS_WIDTH = 1080;
 const SIDE_PADDING = 40;
-const HEADER_HEIGHT = 180;
-const FOOTER_HEIGHT = 150;
+const TOP_PADDING = 30;
+const BOTTOM_PADDING = 30;
 const TILE_GAP = 10;
 const WORD_GAP = 28;
 const ROW_GAP = 26;
@@ -35,12 +35,6 @@ const TILE_TEXT = {
     absent: COLORS.textLight,
     present: COLORS.textDark,
     correct: COLORS.textLight
-};
-
-const CATEGORY_LABELS = {
-    dicionario: 'Dicionário',
-    filme: 'Filme',
-    pais: 'País'
 };
 
 function clamp(value, min, max) {
@@ -164,57 +158,19 @@ function drawRow(ctx, { y, tileSize, wordLengths, letters, tiles, label }) {
     }
 }
 
-function drawLegend(ctx, y) {
-    const items = [
-        { status: 'correct', text: 'letra certa no lugar certo' },
-        { status: 'present', text: 'letra certa no lugar errado' },
-        { status: 'absent', text: 'letra que não existe' }
-    ];
-
-    const box = 22;
-    ctx.textBaseline = 'middle';
-    ctx.font = '20px sans-serif';
-
-    // Os quadradinhos ficam numa coluna só: centralizar cada linha isolada
-    // deixaria as três cores em posições diferentes.
-    const widest = Math.max(...items.map((item) => ctx.measureText(item.text).width));
-    const x = Math.round((CANVAS_WIDTH - (box + 12 + widest)) / 2);
-
-    let cursorY = y;
-    for (const item of items) {
-        ctx.fillStyle = COLORS[item.status];
-        roundedRect(ctx, x, cursorY - (box / 2), box, box, 5);
-        ctx.fill();
-        ctx.strokeStyle = darken(COLORS[item.status]);
-        ctx.lineWidth = 2;
-        roundedRect(ctx, x, cursorY - (box / 2), box, box, 5);
-        ctx.stroke();
-
-        ctx.fillStyle = COLORS.textMuted;
-        ctx.textAlign = 'left';
-        ctx.fillText(item.text, x + box + 12, cursorY);
-
-        cursorY += 34;
-    }
-}
-
 /**
  * @param {object} options
- * @param {string} options.category      'dicionario' | 'filme' | 'pais'
  * @param {string} options.status        'active' | 'won' | 'lost' | 'expired'
  * @param {number[]} options.wordLengths Tamanho de cada palavra da resposta.
  * @param {Array<{letters: string, tiles: string[], label: string}>} options.rows
- * @param {number} [options.maxAttempts]
- * @param {string} [options.answer]      Revelada no rodapé quando o jogo acaba.
+ * @param {string} [options.answer]      Revelada na faixa de resultado quando o jogo acaba.
  * @param {string} [options.winnerLabel]
  * @returns {Promise<Buffer>} PNG do tabuleiro.
  */
 async function renderBoard({
-    category = 'dicionario',
     status = 'active',
     wordLengths = [],
     rows = [],
-    maxAttempts = 10,
     answer = null,
     winnerLabel = null
 } = {}) {
@@ -225,7 +181,7 @@ async function renderBoard({
     const rowHeight = tileSize + LABEL_HEIGHT + ROW_GAP;
     // A faixa de vitória/derrota ocupa uma altura própria, abaixo das linhas.
     const bannerHeight = active ? 0 : 130;
-    const canvasHeight = HEADER_HEIGHT + (visibleRows * rowHeight) + bannerHeight + FOOTER_HEIGHT;
+    const canvasHeight = TOP_PADDING + (visibleRows * rowHeight) + bannerHeight + BOTTOM_PADDING;
 
     const canvas = createCanvas(CANVAS_WIDTH, canvasHeight);
     const ctx = canvas.getContext('2d');
@@ -233,21 +189,7 @@ async function renderBoard({
     ctx.fillStyle = COLORS.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, canvasHeight);
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = COLORS.textDark;
-    ctx.font = 'bold 62px sans-serif';
-    ctx.fillText('LETRECO', CANVAS_WIDTH / 2, 62);
-
-    ctx.fillStyle = COLORS.textMuted;
-    ctx.font = '30px sans-serif';
-    ctx.fillText(
-        `${CATEGORY_LABELS[category] || category}  •  Tentativas: ${rows.length}/${maxAttempts}`,
-        CANVAS_WIDTH / 2,
-        118
-    );
-
-    let y = HEADER_HEIGHT;
+    let y = TOP_PADDING;
     for (const row of rows) {
         drawRow(ctx, {
             y,
@@ -293,8 +235,6 @@ async function renderBoard({
         }
         y += bannerHeight;
     }
-
-    drawLegend(ctx, y + 26);
 
     return canvas.toBuffer('image/png');
 }
