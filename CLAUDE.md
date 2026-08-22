@@ -125,10 +125,12 @@ behavior) without a redeploy.
 | `analyzer/worker.js` | Entry point of the `bootwhats-analyzer` process |
 | `analyzer/VisionClient.js` | Google Vision SafeSearch over REST; throws on every failure |
 | `AuditLogger.js` | Writes structured events to the `logs` table via Prisma |
+| `ErrorLogger.js` | Persists fatal/unexpected errors to `error_logs`; never throws itself |
 | `OracleService.js` | Weekly horoscope-like predictions via Gemini API; cached per phone+week in `oracle_predictions` |
 | `StatsCounter.js` | Buffers message/command counts in memory, flushes to `message_stats` and `message_stats_buckets` periodically |
 | `DiceRoller.js` | Parses dice notation (e.g. `2d6+3`) from messages |
 | `WelcomeService.js` | Sends welcome messages on `group_join` events using config from `welcome_configs` table |
+| `VersionAnnouncer.js` | Broadcasts pending rows from `version_announcements` on the `ready` event, then marks them sent |
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
@@ -173,6 +175,41 @@ browser down so `pm2 restart` doesn't leave one orphaned.
 
 **Dev/prod separation**
 `APP_ENV=development` enables verbose logging. `DEV_GROUP_ID` restricts the bot to a single WhatsApp group — in dev mode only that group is processed; in prod that group is excluded.
+
+**Version announcements**
+`version_announcements` holds rows with `version`, `notes` and a `sent` flag. On the `ready` event,
+`VersionAnnouncer.announcePending()` picks up every row where `sent` is false, broadcasts `notes` to
+every group the bot is in (`client.getChats()` filtered by `isGroup`, or just `DEV_GROUP_ID` in dev
+mode), and marks the row sent — best-effort, so one failing group doesn't cause a resend to
+everyone else on the next restart. There is no command or CLI to insert a row: announcing a version
+means creating an otherwise-empty migration and hand-editing it to `INSERT` the row, so the
+announcement ships in the same PR/deploy as the change it describes:
+```bash
+npx prisma migrate dev --create-only --name announce_v2_4
+# then edit the generated migration.sql:
+# INSERT INTO version_announcements (version, notes, createdAt) VALUES ('2.4', 'texto do aviso', NOW());
+```
+`prisma migrate deploy` in the existing CI pipeline applies it on the next deploy, and the next bot
+restart sends it. `/sobre` reads the `version` of the most recent row (`orderBy: { id: 'desc' }`,
+regardless of `sent`) to show the current version — so every new announcement migration also updates
+what `/sobre` reports, with no separate place to bump.
+
+**Error persistence**
+`error_logs` holds fatal/unexpected errors from both processes (`process` is `bot` or `analyzer`),
+written through `ErrorLogger.logError(err, { process, context })` — never thrown from itself, only
+`console.error`s if the insert fails. This is deliberately narrow, not a mirror of every
+`console.error` in the codebase (most command/game failures stay console-only): it covers
+process-level failures, a global `uncaughtException`/`unhandledRejection` safety net in both
+`index.js` and `services/analyzer/worker.js` (neither existed before this — an error outside any
+try/catch used to crash the process with nothing beyond raw pm2 stderr), and the external-API calls
+behind `/oraculo`, `/filme`, `/news`, `/livros` (Gemini, TMDB, GNews, publishnews.com.br scrape) —
+those are the commands most exposed to third-party outages, so their fetch/HTTP-status failures are
+persisted with `context` values like `command./filme` in addition to their existing user-facing
+"tente novamente" replies. Both global handlers persist then `process.exit(1)`; pm2's `autorestart`
+brings the process back up. The `tools/gestao` admin panel reads this table as its post-login
+landing page (`?route=errors`, see `AuthController::login()` and the `default:` case in
+`public/index.php`) — rows can be marked `resolved` from there, and the screen shows only unresolved
+rows by default (`?all=1` for history).
 
 **HTTP ingest API**
 An Express server (`startIngestServer`) listens on `HTTP_INGEST_PORT` (default 5000) and accepts `POST /` with `{ key, message }` to send a message to `HTTP_INGEST_GROUP_ID`. All other routes return 404 with an empty body to avoid fingerprinting.

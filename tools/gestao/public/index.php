@@ -9,6 +9,7 @@ use Gestao\Controllers\AuthController;
 use Gestao\Controllers\AdminController;
 use Gestao\Controllers\BooksController;
 use Gestao\Controllers\CountryController;
+use Gestao\Controllers\ErrorLogController;
 use Gestao\Controllers\JokeController;
 use Gestao\Controllers\SystemController;
 use Gestao\Controllers\WelcomeController;
@@ -16,6 +17,7 @@ use Gestao\Repositories\AdminRepository;
 use Gestao\Repositories\BookRecommendationRepository;
 use Gestao\Repositories\BooksDownloadRepository;
 use Gestao\Repositories\CountryRepository;
+use Gestao\Repositories\ErrorLogRepository;
 use Gestao\Repositories\JokeRepository;
 use Gestao\Repositories\WelcomeConfigRepository;
 
@@ -27,12 +29,14 @@ require __DIR__ . '/../src/Repositories/AdminRepository.php';
 require __DIR__ . '/../src/Repositories/BooksDownloadRepository.php';
 require __DIR__ . '/../src/Repositories/BookRecommendationRepository.php';
 require __DIR__ . '/../src/Repositories/CountryRepository.php';
+require __DIR__ . '/../src/Repositories/ErrorLogRepository.php';
 require __DIR__ . '/../src/Repositories/JokeRepository.php';
 require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
 require __DIR__ . '/../src/Controllers/BooksController.php';
 require __DIR__ . '/../src/Controllers/CountryController.php';
+require __DIR__ . '/../src/Controllers/ErrorLogController.php';
 require __DIR__ . '/../src/Controllers/JokeController.php';
 require __DIR__ . '/../src/Controllers/SystemController.php';
 require __DIR__ . '/../src/Controllers/WelcomeController.php';
@@ -46,6 +50,7 @@ $recommendationsRepo = new BookRecommendationRepository($db->pdo());
 $jokesRepo = new JokeRepository($db->pdo());
 $welcomeRepo = new WelcomeConfigRepository($db->pdo());
 $countriesRepo = new CountryRepository($db->pdo());
+$errorLogsRepo = new ErrorLogRepository($db->pdo());
 $auth = new Auth($adminsRepo);
 $middleware = new Middleware($adminsRepo);
 
@@ -56,6 +61,7 @@ $jokeController = new JokeController($jokesRepo);
 $systemController = new SystemController();
 $welcomeController = new WelcomeController($welcomeRepo);
 $countryController = new CountryController($countriesRepo);
+$errorLogController = new ErrorLogController($errorLogsRepo);
 
 $path = rtrim((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
 
@@ -105,7 +111,10 @@ switch ($route) {
         $systemController->index();
         break;
     case 'jokes':
-    default:
         $jokeController->index();
+        break;
+    case 'errors':
+    default:
+        $errorLogController->index();
         break;
 }

@@ -8,6 +8,7 @@ const MediaIngest = require('./services/MediaIngest');
 const VerdictDispatcher = require('./services/VerdictDispatcher');
 const CommandHandler = require('./services/CommandHandler');
 const AuditLogger = require('./services/AuditLogger');
+const ErrorLogger = require('./services/ErrorLogger');
 const OracleService = require('./services/OracleService');
 const DiceRoller = require('./services/DiceRoller');
 const { handleGroupJoin } = require('./services/WelcomeService');
@@ -19,6 +20,7 @@ const ForcaGame = require('./services/games/forca');
 const XadrezGame = require('./services/games/xadrez');
 const LetrecoGame = require('./services/games/letreco');
 const BlockedCommands = require('./services/BlockedCommands');
+const VersionAnnouncer = require('./services/VersionAnnouncer');
 
 const isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
 const devGroupId = (process.env.DEV_GROUP_ID || '').trim();
@@ -43,7 +45,9 @@ const analysisMode = (process.env.IMAGE_ANALYSIS_MODE || 'queue').toLowerCase();
 let mediaIngest;
 let verdictDispatcher;
 const auditLogger = new AuditLogger();
-const oracleService = new OracleService(auditLogger);
+const errorLogger = new ErrorLogger();
+const oracleService = new OracleService(auditLogger, errorLogger);
+const versionAnnouncer = new VersionAnnouncer(auditLogger);
 const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
@@ -51,7 +55,7 @@ const forcaGame = new ForcaGame();
 const xadrezGame = new XadrezGame();
 const letrecoGame = new LetrecoGame();
 const blockedCommands = new BlockedCommands();
-const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands, xadrezGame, letrecoGame);
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands, xadrezGame, letrecoGame, errorLogger);
 commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
@@ -121,6 +125,10 @@ async function startClientWithRetry() {
     }
 
     console.error(`❌ ${MAX_INIT_ATTEMPTS} tentativas esgotadas. Intervenção manual necessária.`);
+    errorLogger.logError(new Error(`${MAX_INIT_ATTEMPTS} tentativas esgotadas ao inicializar o WhatsApp Web`), {
+        process: 'bot',
+        context: 'startClientWithRetry.exhausted'
+    });
     return false;
 }
 
@@ -184,6 +192,8 @@ async function init() {
         // Aqui evitamos printar o objeto inteiro (que vira um stack enorme).
         const msg = (e && typeof e === 'object' && 'message' in e) ? e.message : String(e);
         console.error(`❌ ${msg}`);
+        // Sem banco o próprio errorLogger não teria onde escrever — melhor esforço, não bloqueia.
+        errorLogger.logError(e, { process: 'bot', context: 'init.connectDatabase' });
         // Mesmo sem banco, não inicializamos o bot, pois ele depende fortemente do Prisma.
         return;
     }
@@ -259,6 +269,7 @@ commandHandler.setClient(client);
 forcaGame.setClient(client);
 xadrezGame.setClient(client);
 letrecoGame.setClient(client);
+versionAnnouncer.setClient(client);
 
 // O WhatsApp Web é um PWA: com sessão existente, o service worker serve a
 // página do próprio cache e a versão fixada em `webVersion` é ignorada.
@@ -316,6 +327,10 @@ client.on('ready',  async() => {
     } else {
         console.warn('⚠️ Não foi possível resolver o BOOT_NUMBER com getNumberId.');
     }
+
+    versionAnnouncer.announcePending({ isDev, devGroupId }).catch((err) => {
+        console.error('Erro ao processar aviso de versão pendente:', err.message);
+    });
 });
 
 client.on('disconnected', async (reason) => {
@@ -323,6 +338,10 @@ client.on('disconnected', async (reason) => {
     isClientReady = false;
     if (reason === 'LOGOUT') {
         console.error('🔒 Sessão encerrada pelo WhatsApp (LOGOUT). Escaneie o QR novamente.');
+        errorLogger.logError(new Error('Sessão encerrada pelo WhatsApp (LOGOUT)'), {
+            process: 'bot',
+            context: 'client.disconnected.logout'
+        });
         return;
     }
     console.log('🔁 Reconectando em 10s...');
@@ -331,6 +350,7 @@ client.on('disconnected', async (reason) => {
 
 client.on('auth_failure', (message) => {
     console.error(`❌ Falha de autenticação: ${message}. Escaneie o QR novamente.`);
+    errorLogger.logError(new Error(message), { process: 'bot', context: 'client.auth_failure' });
     isClientReady = false;
 });
 
@@ -491,5 +511,21 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     });
 }
 process.on('exit', () => killBrowserProcess());
+
+// Rede de segurança: sem isto, um erro fora de qualquer try/catch derrubava o
+// processo sem deixar rastro além do stderr cru do pm2. O estado pode estar
+// corrompido depois de um desses, então persistimos e saímos — o pm2 reinicia
+// (autorestart em ecosystem.config.js).
+process.on('uncaughtException', (err) => {
+    console.error('❌ uncaughtException:', err);
+    errorLogger.logError(err, { process: 'bot', context: 'uncaughtException' })
+        .finally(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    console.error('❌ unhandledRejection:', err);
+    errorLogger.logError(err, { process: 'bot', context: 'unhandledRejection' })
+        .finally(() => process.exit(1));
+});
 
 init(); // Inicia o carregamento da IA e depois o bot

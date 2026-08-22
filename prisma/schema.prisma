@@ -254,6 +254,7 @@ model GameForca {
   wrongGuesses          String    @db.Text
   errorsCount           Int       @default(0)
   lastLetterAuthorId    String?   @db.VarChar(255)
+  lastLetterAt          DateTime?
   currentRoundMessageId String?   @db.VarChar(255)
   roundMessageIds       String    @db.Text
   startedBy             String    @db.VarChar(255)
@@ -397,4 +398,29 @@ model MediaAnalysisJob {
   @@index([md5])
   @@index([fileHash, status])
   @@map("media_analysis_jobs")
+}
+
+model VersionAnnouncement {
+  id        Int       @id @default(autoincrement())
+  version   String    @unique @db.VarChar(32)
+  notes     String    @db.Text
+  sent      Boolean   @default(false)
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("version_announcements")
+}
+
+model ErrorLog {
+  id         Int       @id @default(autoincrement())
+  process    String    @db.VarChar(32)
+  context    String    @db.VarChar(191)
+  message    String    @db.Text
+  stack      String?   @db.LongText
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([resolved, createdAt])
+  @@map("error_logs")
 }

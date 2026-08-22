@@ -26,7 +26,7 @@ final class AuthController
             if ($phone === '' || $password === '') {
                 $error = 'Preencha telefone e senha.';
             } elseif ($this->auth->login($phone, $password)) {
-                header('Location: /?route=jokes');
+                header('Location: /?route=errors');
                 exit;
             } else {
                 $error = 'Credenciais invalidas.';

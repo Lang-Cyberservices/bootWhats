@@ -8,6 +8,9 @@ const MediaQueue = require('../MediaQueue');
 const ImageAnalyzer = require('../ImageAnalyzer');
 const VisionClient = require('./VisionClient');
 const { saveEvidence } = require('../mediaUtils');
+const ErrorLogger = require('../ErrorLogger');
+
+const errorLogger = new ErrorLogger();
 
 // Processo separado do bot (PM2: bootwhats-analyzer). Consome a fila
 // media_analysis_jobs UMA por vez. Todo o custo de CPU — sharp e tfjs-node —
@@ -164,6 +167,7 @@ async function loop() {
             }
         } catch (err) {
             console.error('Erro no laço do worker:', err?.message || err);
+            errorLogger.logError(err, { process: 'analyzer', context: 'worker.loop' });
             await sleep(idleMs);
         }
     }
@@ -218,11 +222,26 @@ async function main() {
         });
     }
 
+    // Rede de segurança: mesmo raciocínio do bot — sem isto, um erro fora de
+    // qualquer try/catch derrubava o worker sem deixar rastro além do stderr.
+    process.on('uncaughtException', async (err) => {
+        console.error('❌ uncaughtException:', err);
+        await errorLogger.logError(err, { process: 'analyzer', context: 'worker.uncaughtException' });
+        shutdown(1);
+    });
+    process.on('unhandledRejection', async (reason) => {
+        const err = reason instanceof Error ? reason : new Error(String(reason));
+        console.error('❌ unhandledRejection:', err);
+        await errorLogger.logError(err, { process: 'analyzer', context: 'worker.unhandledRejection' });
+        shutdown(1);
+    });
+
     console.log('🖼️ Worker de análise de imagens ATIVO.');
     await loop();
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     console.error('❌ Worker encerrado por erro fatal:', err?.message || err);
+    await errorLogger.logError(err, { process: 'analyzer', context: 'worker.main' });
     shutdown(1);
 });

@@ -1968,7 +1968,7 @@ class CommandHandler {
 
 Diogenes foi criado por um unico programador, com o orçamento de meio sanduiche de presunto, em um tempo muito curto e esta hospedado num pc do milhão.
 Então falhas podem e irão acontecer, ao encotra-las avise que iremos chicotear o programador até ele corrigir ou morrer tentanto,
-para mais informacoes contatar devteam@devteam.net.br ou 11-994634-2101.
+para mais informacoes contatar lang@cyberservices.com ou 11-94634-2101.
 Caso queira ajudar para continuação do projeto, qulquer ajuda é bem vinda:
 pix@diogenes.ia.br
 _versão: 3.1.0_`;

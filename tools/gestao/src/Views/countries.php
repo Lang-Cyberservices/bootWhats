@@ -32,21 +32,7 @@ function countryFlagEmoji(string $sigla): string
     </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-white border-bottom shadow-sm">
-    <div class="container">
-        <a class="navbar-brand" href="/">Diogenes</a>
-        <div class="navbar-nav">
-            <a class="nav-link" href="/?route=jokes">Piadas</a>
-            <a class="nav-link" href="/?route=admins">Admins</a>
-            <a class="nav-link" href="/?route=books">Livros</a>
-            <a class="nav-link" href="/?route=welcome">Boas vindas</a>
-            <a class="nav-link active" aria-current="page" href="/?route=countries">Paises</a>
-            <a class="nav-link" href="/?route=system">Sistema</a>
-            <a class="nav-link" href="/?route=change-password">Trocar senha</a>
-            <a class="nav-link text-danger" href="/?route=logout">Sair</a>
-        </div>
-    </div>
-</nav>
+<?php $activeRoute = 'countries'; require __DIR__ . '/partials/nav.php'; ?>
 <main class="container py-5">
     <h1 class="h3 mb-3">Gestao de Paises</h1>
     <p class="text-secondary mb-4">Cadastre e edite os paises disponiveis.</p>

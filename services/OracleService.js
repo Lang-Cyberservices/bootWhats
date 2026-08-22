@@ -44,8 +44,9 @@ function getDate(weekKey) {
 }
 
 class OracleService {
-    constructor(auditLogger) {
+    constructor(auditLogger, errorLogger = null) {
         this.auditLogger = auditLogger;
+        this.errorLogger = errorLogger;
         const apiKey = process.env.GEMINI_API_KEY;
 
         if (!apiKey) {
@@ -216,6 +217,7 @@ Regras:
             });
         } catch (err) {
             console.error('Erro ao gerar previsão do oráculo:', err);
+            this.errorLogger?.logError(err, { process: 'bot', context: 'command./oraculo' });
             const errText = String(err?.message || '');
             if (err?.status === 429 || errText.includes('Quota exceeded')) {
                 await msg.reply('❌ estou cansado agora saia da frente do meu sol.');

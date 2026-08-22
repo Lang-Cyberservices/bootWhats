@@ -16,21 +16,7 @@
     <link href="/css/crt.css" rel="stylesheet">
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-white border-bottom shadow-sm">
-    <div class="container">
-        <a class="navbar-brand" href="/">Diogenes</a>
-        <div class="navbar-nav">
-            <a class="nav-link" href="/?route=jokes">Piadas</a>
-            <a class="nav-link active" aria-current="page" href="/?route=admins">Admins</a>
-            <a class="nav-link" href="/?route=books">Livros</a>
-            <a class="nav-link" href="/?route=welcome">Boas vindas</a>
-            <a class="nav-link" href="/?route=countries">Paises</a>
-            <a class="nav-link" href="/?route=system">Sistema</a>
-            <a class="nav-link" href="/?route=change-password">Trocar senha</a>
-            <a class="nav-link text-danger" href="/?route=logout">Sair</a>
-        </div>
-    </div>
-</nav>
+<?php $activeRoute = 'admins'; require __DIR__ . '/partials/nav.php'; ?>
 <main class="container py-5">
     <div class="row g-4">
         <div class="col-12 col-lg-5">

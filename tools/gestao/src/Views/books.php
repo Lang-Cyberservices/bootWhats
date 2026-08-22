@@ -24,21 +24,7 @@
     </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-white border-bottom shadow-sm">
-    <div class="container">
-        <a class="navbar-brand" href="/">Diogenes</a>
-        <div class="navbar-nav">
-            <a class="nav-link" href="/?route=jokes">Piadas</a>
-            <a class="nav-link" href="/?route=admins">Admins</a>
-            <a class="nav-link active" aria-current="page" href="/?route=books">Livros</a>
-            <a class="nav-link" href="/?route=welcome">Boas vindas</a>
-            <a class="nav-link" href="/?route=countries">Paises</a>
-            <a class="nav-link" href="/?route=system">Sistema</a>
-            <a class="nav-link" href="/?route=change-password">Trocar senha</a>
-            <a class="nav-link text-danger" href="/?route=logout">Sair</a>
-        </div>
-    </div>
-</nav>
+<?php $activeRoute = 'books'; require __DIR__ . '/partials/nav.php'; ?>
 <main class="container py-5">
     <h1 class="h3 mb-3">Gestao de Livros</h1>
     <p class="text-secondary mb-4">Gerencie os links de download usados no comando e a recomendacao atual do Dio. Recomendacoes antigas ficam visiveis apenas para consulta.</p>
