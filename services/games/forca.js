@@ -12,6 +12,12 @@ const DICTIONARY_PICK_ATTEMPTS = 20;
 const LETTER_REGEX = /\p{L}/u;
 const ONLY_LETTERS_REGEX = /^\p{L}+$/u;
 
+// Mesma ideia do letreco: quem acaba de jogar uma letra só volta a poder jogar
+// outra depois do cooldown, se ninguém mais tiver jogado antes.
+const SAME_LETTER_PLAYER_COOLDOWN_MS = Number(process.env.FORCA_LETTER_COOLDOWN_MS) || 60_000;
+
+const END_WORDS = new Set(['encerrar', 'encerra', 'parar', 'cancelar', 'desistir', 'fim']);
+
 // Argumento do /forca → modo. normalize() já tira acento e caixa, então
 // "advérbio" chega como "adverbio" e "país" como "pais".
 const MODE_ALIASES = {
@@ -133,6 +139,7 @@ class ForcaGame {
             wrongGuesses: parseJsonArray(row.wrongGuesses),
             errorsCount: row.errorsCount,
             lastLetterAuthorId: row.lastLetterAuthorId,
+            lastLetterAt: row.lastLetterAt,
             currentRoundMessageId: row.currentRoundMessageId,
             roundMessageIds: parseJsonArray(row.roundMessageIds),
             startedBy: row.startedBy,
@@ -147,11 +154,26 @@ class ForcaGame {
         return chat?.id?._serialized || chat?.id?.user || '';
     }
 
+    // Quem já pode jogar uma letra de novo: só o cooldown do último jogador segura alguém.
+    letterCooldownAllowedAt(game) {
+        if (!game.lastLetterAt) return 0;
+        return new Date(game.lastLetterAt).getTime() + SAME_LETTER_PLAYER_COOLDOWN_MS;
+    }
+
     // --- Início de partida -------------------------------------------------
 
     async startGame(msg, chat, args) {
         const chatId = this.getChatId(chat);
         if (!chatId) return;
+
+        const authorId = getSenderId(msg) || 'unknown';
+
+        const modeArg = normalize(String(args?.[0] || ''));
+
+        if (END_WORDS.has(modeArg)) {
+            await this.handleEndRequest(msg, chat, chatId, authorId);
+            return;
+        }
 
         const existing = this.activeGamesByChat.get(chatId);
         if (existing) {
@@ -160,7 +182,6 @@ class ForcaGame {
             return;
         }
 
-        const modeArg = normalize(String(args?.[0] || ''));
         let mode;
         if (!modeArg) {
             mode = RANDOM_MODES[Math.floor(Math.random() * RANDOM_MODES.length)];
@@ -176,7 +197,8 @@ class ForcaGame {
                 '• /forca substantivo\n' +
                 '• /forca verbo\n' +
                 '• /forca adjetivo\n' +
-                '• /forca advérbio'
+                '• /forca advérbio\n' +
+                '• /forca encerrar — encerra a partida atual'
             );
             return;
         }
@@ -209,8 +231,6 @@ class ForcaGame {
             answer = entry.word;
         }
 
-        const authorId = getSenderId(msg) || 'unknown';
-
         let row;
         try {
             row = await prisma.gameForca.create({
@@ -238,6 +258,52 @@ class ForcaGame {
         this.activeGamesByChat.set(chatId, game);
 
         await this.sendRound(chat, game);
+    }
+
+    async handleEndRequest(msg, chat, chatId, authorId) {
+        const game = this.activeGamesByChat.get(chatId);
+        if (!game) {
+            await msg.reply('Não existe uma partida de forca ativa neste chat.\n\nUse */forca* para iniciar.');
+            return;
+        }
+
+        const allowed = authorId === game.startedBy || await this.isGroupAdmin(chat, authorId);
+        if (!allowed) {
+            await msg.reply('❌ Só quem começou a partida ou um administrador do grupo pode encerrá-la.');
+            return;
+        }
+
+        game.status = 'expired';
+        game.finishedAt = new Date();
+        await this.persistGame(game);
+        this.activeGamesByChat.delete(chatId);
+
+        const imageIndex = Math.min(game.errorsCount, MAX_ERRORS);
+        const imageName = `forca${imageIndex}.jpeg`;
+        const imagePath = path.join(__dirname, '..', '..', 'storage', 'forca', imageName);
+        const caption = `🎯 *Forca encerrada.*\n\nA resposta era: *${game.answer}*\n\nOs pontos desta partida foram descartados.`;
+
+        try {
+            const buffer = await fs.readFile(imagePath);
+            const media = new MessageMedia('image/jpeg', buffer.toString('base64'), imageName);
+            await chat.sendMessage(media, { caption });
+        } catch (err) {
+            console.error('Erro ao enviar resultado do encerramento da forca:', err?.message || err);
+            try {
+                await chat.sendMessage(caption);
+            } catch (_) {}
+        }
+    }
+
+    async isGroupAdmin(chat, authorId) {
+        try {
+            const participant = (chat?.participants || []).find(
+                (p) => (p?.id?._serialized || p?.id?.user) === authorId
+            );
+            return Boolean(participant?.isAdmin || participant?.isSuperAdmin);
+        } catch (_) {
+            return false;
+        }
     }
 
     async pickRandomDictionaryEntry(mode = 'dicionario') {
@@ -357,8 +423,15 @@ class ForcaGame {
 
     async processLetterGuess(chat, game, authorId, participant, letter, msg) {
         if (authorId === game.lastLetterAuthorId) {
-            await msg.reply('⏳ Você acabou de jogar uma letra. Espere outra pessoa jogar antes de tentar de novo.');
-            return;
+            const allowedAt = this.letterCooldownAllowedAt(game);
+            if (Date.now() < allowedAt) {
+                const seconds = Math.ceil((allowedAt - Date.now()) / 1000);
+                await msg.reply(
+                    'Agora é a vez de outra pessoa.\n\n' +
+                    `Você poderá jogar essa letra novamente em ${seconds} segundos caso ninguém jogue antes.`
+                );
+                return;
+            }
         }
 
         const normalized = normalize(letter);
@@ -368,6 +441,7 @@ class ForcaGame {
         }
 
         game.lastLetterAuthorId = authorId;
+        game.lastLetterAt = new Date();
 
         if (game.answerLetterSet.has(normalized)) {
             game.guessedLetters.add(normalized);
@@ -465,7 +539,10 @@ class ForcaGame {
         let guessHint = '• um chute da palavra inteira.';
         if (game.mode === 'filmes') guessHint = '• o nome completo do filme.';
         if (game.mode === 'paises') guessHint = '• o nome completo do país.';
-        lines.push('', 'Todos podem jogar. Responda ESTA imagem com:', '• uma letra', 'ou', guessHint);
+        lines.push(
+            '', 'Todos podem jogar. Responda ESTA imagem com:', '• uma letra', 'ou', guessHint,
+            '', 'Depois de jogar uma letra, outra pessoa tem prioridade por 60 segundos.'
+        );
 
         return lines.join('\n');
     }
@@ -651,6 +728,7 @@ class ForcaGame {
                     wrongGuesses: JSON.stringify(game.wrongGuesses),
                     errorsCount: game.errorsCount,
                     lastLetterAuthorId: game.lastLetterAuthorId,
+                    lastLetterAt: game.lastLetterAt,
                     currentRoundMessageId: game.currentRoundMessageId,
                     roundMessageIds: JSON.stringify(game.roundMessageIds),
                     winnerId: game.winnerId,
