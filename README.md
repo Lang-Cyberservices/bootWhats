@@ -1,6 +1,6 @@
 # BootWhats
 
-Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos auxiliares, usando `whatsapp-web.js`, `nsfwjs` e Prisma + MariaDB.
+Bot do WhatsApp com filtro de mensagens, análise de imagens (NSFW) e comandos auxiliares, usando `whatsapp-web.js`, `nsfwjs` e Prisma + MariaDB e cassandra.
 
 **Resumo rápido**
 1. Suba o MariaDB (docker compose).
