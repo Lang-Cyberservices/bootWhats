@@ -265,6 +265,12 @@ const client = new Client({
         headless: true
     }
 });
+// O sendSeen do WhatsApp Web atual trava o envio de texto e imagem. Message.reply
+// e chat.sendMessage passam por client.sendMessage, então este wrapper cobre tudo.
+const originalSendMessage = client.sendMessage.bind(client);
+client.sendMessage = (chatId, content, options) =>
+    originalSendMessage(chatId, content, { ...(options || {}), sendSeen: false });
+
 commandHandler.setClient(client);
 forcaGame.setClient(client);
 xadrezGame.setClient(client);

@@ -173,6 +173,15 @@ serialized through a single `reconnectPromise`, because the watchdog and the `di
 can fire together and used to open a second Chromium. `SIGINT`/`SIGTERM`/`exit` handlers tear the
 browser down so `pm2 restart` doesn't leave one orphaned.
 
+**Media sending compatibility**
+Sending images broke when WhatsApp Web changed its internal media format: `MediaData` carries a
+private `__x_id` that overwrote the outgoing `MsgKey`. Two fixes, both required:
+`scripts/patch-whatsapp-media.js` (run by `postinstall`, idempotent) injects `delete message.__x_id;`
+into the installed `whatsapp-web.js/src/util/Injected/Utils.js`, and `index.js` wraps
+`client.sendMessage` to force `sendSeen: false` (the current WA Web's `sendSeen` hangs sends). The
+deploy runs `npm run verify:media-patch` and fails if the patch is missing, so don't drop either
+piece as dead weight; remove them only once the upstream lib ships the fix. Ported from `zapbot`.
+
 **Dev/prod separation**
 `APP_ENV=development` enables verbose logging. `DEV_GROUP_ID` restricts the bot to a single WhatsApp group — in dev mode only that group is processed; in prod that group is excluded.
 

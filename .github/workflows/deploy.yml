@@ -29,6 +29,8 @@ jobs:
             
             # Instala dependências e atualiza o Prisma
             npm install
+            # O postinstall corrige o envio de mídia no whatsapp-web.js; falha o deploy se sumir
+            npm run verify:media-patch
             npx prisma generate
             npx prisma migrate deploy
             
