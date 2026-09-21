@@ -75,11 +75,16 @@ Retorna um JSON com campos como:
 - `pornScore`, `sexyScore`, `hentaiScore`, `neutralScore`, `nsfwScore`.
 - `safeSearch`: os cinco níveis devolvidos pelo Google Vision (`adult`, `racy`, `violence`, `spoof`, `medical`).
 - `blocked`: `true`, `false` ou `null` (quando o Vision falha).
-- `reason`: `NSFWJS_PASS`, `VISION`, `VISION_PASS`, `VISION_ERROR`, `UNSUPPORTED_FORMAT`.
+- `reason`: `NSFWJS_PASS`, `VISION_ADULT`, `VISION_RACY_CONFIRMED`, `VISION_PASS`, `VISION_ERROR`, `UNSUPPORTED_FORMAT`.
+- `policy`: a política de moderação ativa (`services/analyzer/moderationPolicy.js`).
 
 ### Observações sobre o Google Vision
-Abaixo de `NSFW_VISION_GATE` (padrão `0.3`) o NSFWJS libera sozinho. Acima do portão quem decide é
-sempre o Vision, que bloqueia quando `adult` ou `racy` chega ao nível configurado (padrão `LIKELY`).
+O NSFWJS nunca bloqueia sozinho. A política completa fica em `services/analyzer/moderationPolicy.js`
+(números e regras no código, versionados no git):
+- consulta o Vision se `Porn >= 0,3`, `Sexy >= 0,3` ou `Hentai >= 0,4`; abaixo disso a imagem passa;
+- bloqueia se `adult > 0,6` (LIKELY ou mais; níveis do Vision em escala 0..1: nível/5);
+- bloqueia por `racy` só com dupla confirmação: `racy = 1` (VERY_LIKELY) **e** (`Porn >= 0,8` ou
+  `Sexy >= 0,8` ou `Hentai > 0,9`).
 Se o Vision falhar, a ferramenta retorna `blocked: null` e `reason: VISION_ERROR` — e, em produção, o
 job é retentado sem apagar nada.
 
@@ -88,8 +93,6 @@ GOOGLE_VISION_API_KEY=sua_chave node tools/validate_evidence_md5.js /caminho/da/
 ```
 
 Você também pode ajustar:
-- `NSFW_VISION_GATE` (default `0.3`)
-- `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` (default `LIKELY`)
 - `GOOGLE_VISION_TIMEOUT_MS` (default `15000`)
 
 ## Estrutura (alto nível)

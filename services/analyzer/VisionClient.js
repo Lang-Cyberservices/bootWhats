@@ -19,6 +19,12 @@ function rankLevel(level) {
     return index < 0 ? 0 : index;
 }
 
+// A mesma escala em 0..1 que vai para `predictions` (nível/5): UNKNOWN 0, VERY_UNLIKELY 0,2,
+// UNLIKELY 0,4, POSSIBLE 0,6, LIKELY 0,8, VERY_LIKELY 1. É nela que moderationPolicy compara.
+function likelihoodValue(level) {
+    return rankLevel(level) / (LEVELS.length - 1);
+}
+
 function toPositiveInt(value, fallback) {
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -112,3 +118,4 @@ class VisionClient {
 module.exports = VisionClient;
 module.exports.LEVELS = LEVELS;
 module.exports.rankLevel = rankLevel;
+module.exports.likelihoodValue = likelihoodValue;

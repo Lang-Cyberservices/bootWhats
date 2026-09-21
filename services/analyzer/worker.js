@@ -7,6 +7,7 @@ const { connectDatabase, prisma } = require('../database');
 const MediaQueue = require('../MediaQueue');
 const ImageAnalyzer = require('../ImageAnalyzer');
 const VisionClient = require('./VisionClient');
+const { describePolicy } = require('./moderationPolicy');
 const { saveEvidence } = require('../mediaUtils');
 const ErrorLogger = require('../ErrorLogger');
 
@@ -183,20 +184,17 @@ async function shutdown(code = 0) {
 }
 
 // Sem chave não existe segunda opinião, e como o NSFWJS não bloqueia sozinho,
-// TUDO acima do portão vira indecidível: retenta JOB_MAX_ATTEMPTS vezes e passa.
+// TUDO que passa do portão vira indecidível: retenta JOB_MAX_ATTEMPTS vezes e passa.
 // Na prática a moderação fica desligada, então o aviso precisa ser barulhento.
 function warnIfVisionMisconfigured() {
     if (visionClient.enabled) {
-        console.log(
-            `🔎 Vision SafeSearch ativo — portão NSFWJS ${analyzer.visionGate}, ` +
-            `bloqueio em adult>=${analyzer.adultLevel} ou racy>=${analyzer.racyLevel}.`
-        );
+        console.log(`🔎 Vision SafeSearch ativo — ${describePolicy()}`);
         return;
     }
 
     console.warn(
         '\n⚠️  GOOGLE_VISION_API_KEY não configurada.\n' +
-        `   Toda imagem com score NSFWJS acima de ${analyzer.visionGate} ficará indecidível:\n` +
+        '   Toda imagem que passar do portão do NSFWJS ficará indecidível:\n' +
         `   o job é retentado ${maxAttempts}x, vira "failed" e a mensagem NÃO é apagada.\n` +
         '   Configure a chave na .env antes de contar com a moderação.\n'
     );

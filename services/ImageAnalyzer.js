@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const tf = require('@tensorflow/tfjs-node');
-const { rankLevel } = require('./analyzer/VisionClient');
+const { likelihoodValue } = require('./analyzer/VisionClient');
+const { getScore, shouldConsultVision, decide } = require('./analyzer/moderationPolicy');
 
 // Motor puro de análise: recebe bytes, devolve veredito. Sem WhatsApp, sem banco.
 // Quem orquestra é o worker (services/analyzer/worker.js), que roda em outro
@@ -11,11 +12,9 @@ class ImageAnalyzer {
         this.blockedClasses = options.blockedClasses ?? ['Porn', 'Hentai', 'Sexy'];
         this.inputSize = options.inputSize || this.getModelInputSize(model) || 299;
         this.visionClient = options.visionClient || null;
-        // Portão: abaixo disso o NSFWJS libera sozinho. Acima, quem decide é sempre
-        // o Vision — não existe bloqueio direto pelo NSFWJS.
-        this.visionGate = options.visionGate ?? Number(process.env.NSFW_VISION_GATE ?? 0.3);
-        this.adultLevel = options.adultLevel ?? (process.env.GOOGLE_VISION_ADULT_LEVEL || 'LIKELY');
-        this.racyLevel = options.racyLevel ?? (process.env.GOOGLE_VISION_RACY_LEVEL || 'LIKELY');
+        // Portão e regras de bloqueio vivem em analyzer/moderationPolicy.js. O NSFWJS
+        // nunca bloqueia sozinho: só decide se o Vision é consultado e, no caso do
+        // `racy`, confirma o que o Vision disse.
         this.isDev = (process.env.APP_ENV || '').toLowerCase() === 'development';
     }
 
@@ -48,20 +47,17 @@ class ImageAnalyzer {
             console.log('Resultado da análise NSFWJS:', predictions);
         }
 
-        const pornScore = getScore(predictions, 'Porn');
-        const sexyScore = getScore(predictions, 'Sexy');
-        const hentaiScore = getScore(predictions, 'Hentai');
-        const nsfwScore = Math.max(pornScore, sexyScore, hentaiScore);
+        const { consult, score: nsfwScore } = shouldConsultVision(predictions);
 
-        if (nsfwScore < this.visionGate) {
+        if (!consult) {
             if (this.isDev) {
-                console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} < portão ${this.visionGate} — liberado sem consultar o Vision.`);
+                console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} abaixo do portão — liberado sem consultar o Vision.`);
             }
             return this.result({ isNsfw: false, reason: 'NSFWJS_PASS', predictions, nsfwScore });
         }
 
         if (this.isDev) {
-            console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} >= portão ${this.visionGate} — consultando o Vision.`);
+            console.log(`NSFWJS: score ${nsfwScore.toFixed(3)} passou do portão — consultando o Vision.`);
         }
 
         let safeSearch;
@@ -82,25 +78,18 @@ class ImageAnalyzer {
             });
         }
 
-        const isNsfw =
-            rankLevel(safeSearch.adult) >= rankLevel(this.adultLevel) ||
-            rankLevel(safeSearch.racy) >= rankLevel(this.racyLevel);
+        const { isNsfw, reason } = decide(predictions, safeSearch);
 
         // Vai para media_analysis_jobs.predictions e daí para o log IMAGE_REMOVED.
         // O nível cru viaja junto porque `probability` sozinho perde o que importa
-        // na hora de auditar por que a imagem caiu.
+        // na hora de auditar por que a imagem caiu. Empurrado DEPOIS do decide, que
+        // lê só as classes do NSFWJS.
         predictions.push(
-            { className: 'VISION_ADULT', probability: rankLevel(safeSearch.adult) / 5, level: safeSearch.adult },
-            { className: 'VISION_RACY', probability: rankLevel(safeSearch.racy) / 5, level: safeSearch.racy }
+            { className: 'VISION_ADULT', probability: likelihoodValue(safeSearch.adult), level: safeSearch.adult },
+            { className: 'VISION_RACY', probability: likelihoodValue(safeSearch.racy), level: safeSearch.racy }
         );
 
-        return this.result({
-            isNsfw,
-            reason: isNsfw ? 'VISION' : 'VISION_PASS',
-            predictions,
-            nsfwScore,
-            safeSearch
-        });
+        return this.result({ isNsfw, reason, predictions, nsfwScore, safeSearch });
     }
 
     result({ isNsfw, reason, predictions = [], nsfwScore = 0, safeSearch = null, visionError = null, skipped = false }) {
@@ -217,11 +206,6 @@ class ImageAnalyzer {
 
         return this.visionClient.safeSearch(payload);
     }
-}
-
-function getScore(predictions, className) {
-    const found = predictions.find((p) => p.className === className);
-    return found ? found.probability : 0;
 }
 
 module.exports = ImageAnalyzer;

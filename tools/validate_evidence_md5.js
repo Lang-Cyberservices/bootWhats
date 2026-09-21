@@ -5,12 +5,11 @@ require('dotenv').config();
 const nsfw = require('nsfwjs');
 const ImageAnalyzer = require('../services/ImageAnalyzer');
 const VisionClient = require('../services/analyzer/VisionClient');
+const { POLICY } = require('../services/analyzer/moderationPolicy');
 
 // Valida uma imagem local contra o mesmo motor que o worker usa em produção
-// (services/ImageAnalyzer.js), sem WhatsApp e sem banco. O portão aqui é mais
-// baixo que o de produção de propósito: esta ferramenta serve para inspecionar a
-// zona em que o Vision entra em cena.
-const VISION_GATE = Number(process.env.NSFW_VISION_GATE ?? 0.3);
+// (services/ImageAnalyzer.js), sem WhatsApp e sem banco, com a política de
+// services/analyzer/moderationPolicy.js — a mesma de produção.
 
 async function main() {
   const inputPath = process.argv[2];
@@ -30,8 +29,7 @@ async function main() {
 
   const analyzer = new ImageAnalyzer(model, {
     inputSize: 299,
-    visionClient: new VisionClient(),
-    visionGate: VISION_GATE
+    visionClient: new VisionClient()
   });
 
   const ext = path.extname(resolvedPath).toLowerCase();
@@ -59,9 +57,7 @@ async function main() {
     sexyScore: getScore('Sexy'),
     hentaiScore: getScore('Hentai'),
     neutralScore: getScore('Neutral'),
-    visionGate: analyzer.visionGate,
-    visionAdultLevel: analyzer.adultLevel,
-    visionRacyLevel: analyzer.racyLevel,
+    policy: POLICY,
     safeSearch: verdict.safeSearch,
     visionError: verdict.visionError,
     blocked: verdict.isNsfw,

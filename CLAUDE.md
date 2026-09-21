@@ -81,11 +81,13 @@ after `JOB_MAX_ATTEMPTS` they become `failed`. The worker exits every
 `ANALYZER_MAX_JOBS_BEFORE_EXIT` jobs so PM2 recycles it and native TF memory is reclaimed.
 
 `ImageAnalyzer` is now a pure engine: `analyze(buffer, { mimetype, isSticker, filePath })` with no
-WhatsApp or DB coupling. `nsfwScore` is `max(Porn, Sexy, Hentai)`; below `NSFW_VISION_GATE` (0.3) it
-passes, and **above the gate the verdict is always Google Vision's** — NSFWJS never blocks on its
-own. `isNsfw: null` means undecidable (Vision down) — the job retries and nothing is cached or
-deleted. Note what that costs: with no local hard block, a missing API key means everything above
-the gate is retried `JOB_MAX_ATTEMPTS` times and then passes, so the worker warns loudly at boot.
+WhatsApp or DB coupling. `nsfwScore` is `max(Porn, Sexy, Hentai)` (log/reporting only). The rules
+live in `analyzer/moderationPolicy.js` — numbers and AND/OR structure in code, deliberately not in
+`.env`, so a policy change goes through git: Vision is consulted when `Porn >= 0.3`, `Sexy >= 0.3` or
+`Hentai >= 0.4`, otherwise the image passes. NSFWJS never blocks on its own. `isNsfw: null` means
+undecidable (Vision down) — the job retries and nothing is cached or deleted. Note what that costs:
+with no local hard block, a missing API key means everything past the gate is retried
+`JOB_MAX_ATTEMPTS` times and then passes, so the worker warns loudly at boot.
 
 **NSFWJS models.** Production loads `models/inception_v3`, which is the v1.0 artifact from
 `GantMan/nsfw_model` — the only Inception v3 ever published, so there is no newer version of it.
@@ -97,9 +99,14 @@ the nsfwjs *library* (4.2.1 → 4.4.0) changes no weights and buys no accuracy.
 **Google Vision SafeSearch** (`analyzer/VisionClient.js`) replaced the LAION sidecar — a Python
 process holding ~1.5 GB of CLIP resident, paid for by every restart. It is a plain REST call with
 `fetch`, authenticated by `GOOGLE_VISION_API_KEY` in the query string; the official SDK only accepts
-service accounts and would drag in gRPC/protobuf for one endpoint. Blocking happens when `adult` or
-`racy` reaches `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` (default `LIKELY`, compared
-on the API's own scale, `UNKNOWN` ranked lowest so it never blocks alone).
+service accounts and would drag in gRPC/protobuf for one endpoint. Vision levels are compared as
+numbers on a 0..1 scale (`likelihoodValue`: level/5, so `UNKNOWN` = 0 never blocks alone, `LIKELY` = 0.8,
+`VERY_LIKELY` = 1). Blocking: `adult > 0.6`, or `racy = 1` **and** NSFWJS agreeing (`Porn >= 0.8` or
+`Sexy >= 0.8` or `Hentai > 0.9`) — `racy` (beach, gym, cleavage) alone no longer blocks. NSFWJS classes
+are a softmax summing to 1, so "Porn and Sexy both > 0.8" can never hold; the confirmation is an OR.
+The verdict's `reason` says which rule fired: `VISION_ADULT`, `VISION_RACY_CONFIRMED`, `VISION_PASS`.
+`media_hashes` caches `isNsfw = true` forever, so an image wrongly removed under an older policy is
+still removed if resent — the policy change does not re-judge the cache.
 
 Every failure path in `VisionClient` throws, deliberately: that is what `ImageAnalyzer` turns into
 `isNsfw: null`. Returning an optimistic verdict there would silently release content whenever the
@@ -245,8 +252,6 @@ See `.env_example` for all options. Critical ones:
 - `IMAGE_ANALYSIS_MODE` — `queue` (default) or `inline` to analyze inside the bot process
 - `MEDIA_SPOOL_DIR` — where the bot parks downloaded media until the worker consumes it
 - `GOOGLE_VISION_API_KEY` — SafeSearch second opinion; without it nothing above the gate is decided
-- `NSFW_VISION_GATE` — NSFWJS score above which Vision is consulted (default `0.3`)
-- `GOOGLE_VISION_ADULT_LEVEL` / `GOOGLE_VISION_RACY_LEVEL` — block from this likelihood up (default `LIKELY`)
 
 ## Node version
 
