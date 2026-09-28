@@ -45,6 +45,19 @@ function toStoredPhone(countryCode, phone) {
     return digits;
 }
 
+// folhas.users.name e utf8 de 3 bytes: caracteres fora do BMP (emoji, letras
+// "estilizadas" como 𝖑𝖎𝖛𝖗𝖔) fazem o MariaDB recusar o INSERT. NFKC converte
+// as letras estilizadas nas comuns; o que sobrar acima de U+FFFF e descartado.
+function sanitizeName(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
+        .replace(/[\u200B-\u200D\uFE0E\uFE0F]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+}
+
 function maskPhone(phone) {
     const digits = digitsOf(phone);
     if (digits.length <= 4) return digits;
@@ -101,8 +114,9 @@ class FolhasSync {
     async resolveContactName(id, fallback) {
         try {
             const contact = await this.client.getContactById(id);
-            const label = String(contact?.pushname || contact?.name || '').trim();
-            if (label.length >= 3) return label.slice(0, 120);
+            const label = sanitizeName(contact?.pushname || contact?.name);
+            // Sem nenhuma letra (so simbolos/emoji) o nome nao identifica ninguem.
+            if (label.length >= 3 && /\p{L}/u.test(label)) return label;
         } catch (err) {
             console.warn('FolhasSync: falha ao obter contato', id, '-', err?.message || err);
         }
@@ -184,7 +198,7 @@ class FolhasSync {
                     id: member.id,
                     countryId: country.id,
                     phone,
-                    name: await this.resolveContactName(member.id, `Membro ${phone.slice(-4)}`)
+                    name: await this.resolveContactName(member.id, phone)
                 });
                 continue;
             }
