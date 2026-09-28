@@ -138,6 +138,7 @@ behavior) without a redeploy.
 | `DiceRoller.js` | Parses dice notation (e.g. `2d6+3`) from messages |
 | `WelcomeService.js` | Sends welcome messages on `group_join` events using config from `welcome_configs` table |
 | `VersionAnnouncer.js` | Broadcasts pending rows from `version_announcements` on the `ready` event, then marks them sent |
+| `FolhasSync.js` | `/folhas` — syncs the book-club group with the `folhas` system's `users` table (see below) |
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
@@ -227,6 +228,21 @@ landing page (`?route=errors`, see `AuthController::login()` and the `default:` 
 `public/index.php`) — rows can be marked `resolved` from there, and the screen shows only unresolved
 rows by default (`?all=1` for history).
 
+**Folhas integration (`/folhas`)**
+`folhas` is a separate CodeIgniter app (book club) whose schema lives in the same MariaDB server;
+`FolhasSync` reaches it with raw SQL on `` `FOLHAS_DB_NAME`.users `` through the bot's own Prisma
+connection — no second connection, nothing in `schema.prisma`. It runs only by command (admins of
+`FOLHAS_GROUP_ID`, or `DEV_GROUP_ID` for testing): `/folhas` previews, `/folhas aplicar` writes, in
+one transaction. Group members without a user are inserted (`role=user`, `must_change_password=1`,
+`FOLHAS_DEFAULT_PASSWORD` hashed with `bcryptjs` and the prefix rewritten `$2b$`→`$2y$` for PHP);
+soft-deleted users back in the group get `deleted_at = NULL`; active users gone from the group get
+`deleted_at = NOW()` — folhas's own soft delete, which its login and `AuthFilter` already honor.
+Folhas admins and user id 1 are never deactivated. `folhas.users.phone` has no country code (it comes
+from `countries.code`, longest prefix wins), and Brazilian numbers are matched on DDD + last 8 digits
+because WhatsApp still reports old accounts without the ninth digit. `@lid` participants are resolved
+with `getContactLidAndPhone`; if any stays unresolved, **no one is deactivated** in that run — the
+unknown participant could be an existing user.
+
 **HTTP ingest API**
 An Express server (`startIngestServer`) listens on `HTTP_INGEST_PORT` (default 5000) and accepts `POST /` with `{ key, message }` to send a message to `HTTP_INGEST_GROUP_ID`. All other routes return 404 with an empty body to avoid fingerprinting.
 
@@ -249,6 +265,8 @@ See `.env_example` for all options. Critical ones:
 - `MAX_COMMANDS_PER_MINUTE` — per-user rate limit (default 3 per 2-minute window)
 - `LETRECO_COOLDOWN_MS` / `LETRECO_TIMEOUT_MS` — same-player wait (default 60 s) and idle expiry of a
   letreco match (default 6 h); both exist so the rules can be exercised without waiting
+- `FOLHAS_GROUP_ID` / `FOLHAS_DB_NAME` / `FOLHAS_DEFAULT_PASSWORD` — `/folhas` sync target group,
+  folhas schema name (default `folhas`) and initial password (min. 6 chars) for users it creates
 - `IMAGE_ANALYSIS_MODE` — `queue` (default) or `inline` to analyze inside the bot process
 - `MEDIA_SPOOL_DIR` — where the bot parks downloaded media until the worker consumes it
 - `GOOGLE_VISION_API_KEY` — SafeSearch second opinion; without it nothing above the gate is decided

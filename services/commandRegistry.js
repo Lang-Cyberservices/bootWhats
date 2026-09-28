@@ -31,6 +31,7 @@ const COMMAND_DEFINITIONS = [
     { name: 'xadrez', aliases: ['/xadrez', '/chess'] },
     { name: 'letreco', aliases: ['/letreco'] },
     { name: 'pais', aliases: ['/pais'] },
+    { name: 'folhas', aliases: ['/folhas'] },
     { name: 'fechar', aliases: ['/fechar'], protected: true },
     { name: 'abrir', aliases: ['/abrir'], protected: true }
 ];

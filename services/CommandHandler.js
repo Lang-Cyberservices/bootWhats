@@ -4,6 +4,7 @@ const { KNOWN_COMMANDS, resolveCommandName, normalizeCommandText } = require('./
 const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
+const FolhasSync = require('./FolhasSync');
 const ytdl = require('@distube/ytdl-core');
 const { saveEvidence } = require('./mediaUtils');
 const { execFile } = require('node:child_process');
@@ -89,8 +90,9 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null) {
         this.auditLogger = auditLogger;
+        this.errorLogger = errorLogger;
         this.oracleService = oracleService;
         this.diceRoller = diceRoller;
         this.forcaGame = forcaGame;
@@ -369,6 +371,10 @@ class CommandHandler {
 
         if (command === '/pais') {
             return this.handlePais(msg, chat, args);
+        }
+
+        if (command === '/folhas') {
+            return this.handleFolhas(msg, chat, args);
         }
 
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
@@ -1036,6 +1042,49 @@ class CommandHandler {
         } catch (err) {
             console.error('Erro no /filme:', err?.message || err);
             await msg.reply('❌ Não consegui buscar filmes agora.');
+        }
+    }
+
+    // Sincroniza os membros do grupo do clube do livro com o sistema folhas.
+    // Sem argumento so mostra a previa; "/folhas aplicar" grava.
+    async handleFolhas(msg, chat, args) {
+        const chatId = chat?.id?._serialized || '';
+        const allowedChats = [process.env.FOLHAS_GROUP_ID, process.env.DEV_GROUP_ID].filter(Boolean);
+        if (!allowedChats.includes(chatId)) {
+            await msg.reply('❌ Este comando só funciona no grupo do clube do livro.');
+            return;
+        }
+
+        if (!(await this.isAdmin(msg, chat))) {
+            await msg.reply('❌ Apenas administradores podem sincronizar o Folhas.');
+            return;
+        }
+
+        const apply = String(args?.[0] || '').toLowerCase() === 'aplicar';
+
+        try {
+            const report = await new FolhasSync({ client: this.client }).run({ apply });
+
+            if (apply) {
+                await this.auditLogger?.log('FOLHAS_SYNC', {
+                    chatId,
+                    authorId: getSenderId(msg),
+                    messageId: msg.id?._serialized || null,
+                    details: {
+                        created: report.toCreate.length,
+                        restored: report.toRestore.length,
+                        deactivated: report.toDeactivate.length,
+                        blockedDeactivations: report.blockedDeactivations.length,
+                        unresolved: report.unresolved.length
+                    }
+                });
+            }
+
+            await msg.reply(FolhasSync.formatReport(report));
+        } catch (err) {
+            console.error('Erro no /folhas:', err?.message || err);
+            this.errorLogger?.logError(err, { process: 'bot', context: 'command./folhas' });
+            await msg.reply(`❌ Não consegui sincronizar o Folhas: ${err?.message || 'erro desconhecido'}`);
         }
     }
 
