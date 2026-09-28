@@ -138,7 +138,7 @@ behavior) without a redeploy.
 | `DiceRoller.js` | Parses dice notation (e.g. `2d6+3`) from messages |
 | `WelcomeService.js` | Sends welcome messages on `group_join` events using config from `welcome_configs` table |
 | `VersionAnnouncer.js` | Broadcasts pending rows from `version_announcements` on the `ready` event, then marks them sent |
-| `FolhasSync.js` | `/folhas` — syncs the book-club group with the `folhas` system's `users` table (see below) |
+| `FolhasSync.js` | `/folhas` — syncs the book-club group with the `folhas` system's `users` table and reports the active vote (see below) |
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
@@ -231,9 +231,11 @@ rows by default (`?all=1` for history).
 **Folhas integration (`/folhas`)**
 `folhas` is a separate CodeIgniter app (book club) whose schema lives in the same MariaDB server;
 `FolhasSync` reaches it with raw SQL on `` `FOLHAS_DB_NAME`.users `` through the bot's own Prisma
-connection — no second connection, nothing in `schema.prisma`. It runs only by command (admins of
-`FOLHAS_GROUP_ID`, or `DEV_GROUP_ID` for testing): `/folhas` previews, `/folhas aplicar` writes, in
-one transaction. Group members without a user are inserted (`role=user`, `must_change_password=1`,
+connection — no second connection, nothing in `schema.prisma`. Commands work only in `FOLHAS_GROUP_ID` (or
+`DEV_GROUP_ID` for testing); bare `/folhas` lists the options. `/folhas votacao` (any member) reads
+the newest `voting_sessions` row with `status='active'` and counts `book_votes` per suggestion, the
+same query as folhas's `getSessionSuggestionsWithStats()`. Member sync is admin-only: `/folhas status`
+previews, `/folhas atualizar` writes, in one transaction. Group members without a user are inserted (`role=user`, `must_change_password=1`,
 `FOLHAS_DEFAULT_PASSWORD` hashed with `bcryptjs` and the prefix rewritten `$2b$`→`$2y$` for PHP);
 soft-deleted users back in the group get `deleted_at = NULL`; active users gone from the group get
 `deleted_at = NOW()` — folhas's own soft delete, which its login and `AuthFilter` already honor.

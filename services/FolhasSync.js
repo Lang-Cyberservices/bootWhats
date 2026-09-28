@@ -260,6 +260,49 @@ class FolhasSync {
         return report;
     }
 
+    // Votacao ativa do folhas (mesmo criterio de VotingSessionModel::getActiveSession
+    // e da contagem de BookSuggestionModel::getSessionSuggestionsWithStats).
+    // Devolve null quando nao ha votacao com status 'active'.
+    async getActiveVoting() {
+        const [session] = await prisma.$queryRawUnsafe(
+            `SELECT id FROM ${this.table('voting_sessions')} WHERE status = 'active' ORDER BY id DESC LIMIT 1`
+        );
+        if (!session) return null;
+
+        const rows = await prisma.$queryRawUnsafe(
+            `SELECT s.title, s.author, COUNT(v.id) AS vote_count
+               FROM ${this.table('book_suggestions')} s
+               LEFT JOIN ${this.table('book_votes')} v ON v.suggestion_id = s.id
+              WHERE s.session_id = ?
+              GROUP BY s.id
+              ORDER BY vote_count DESC, s.created_at ASC`,
+            session.id
+        );
+        return rows.map((row) => ({
+            title: row.title,
+            author: row.author,
+            votes: Number(row.vote_count)
+        }));
+    }
+
+    static formatVoting(list) {
+        const lines = ['📚 *Votação atual*', ''];
+        if (!list.length) {
+            lines.push('Nenhum livro na votação ainda.');
+            return lines.join('\n');
+        }
+
+        list.forEach((book, index) => {
+            const author = book.author ? ` — ${book.author}` : '';
+            lines.push(`${index + 1}. ${book.title}${author}: ${book.votes} ${book.votes === 1 ? 'voto' : 'votos'}`);
+        });
+
+        const total = list.reduce((sum, book) => sum + book.votes, 0);
+        lines.push('');
+        lines.push(`Total: ${total} ${total === 1 ? 'voto' : 'votos'}`);
+        return lines.join('\n');
+    }
+
     static formatReport(report) {
         const lines = [];
         lines.push(report.applied ? '📚 *Sincronização do Folhas aplicada*' : '📚 *Prévia da sincronização do Folhas*');
@@ -290,7 +333,7 @@ class FolhasSync {
 
         if (!report.applied) {
             lines.push('');
-            lines.push('Use */folhas aplicar* para gravar.');
+            lines.push('Use */folhas atualizar* para gravar.');
         }
 
         return lines.join('\n');

@@ -1045,8 +1045,10 @@ class CommandHandler {
         }
     }
 
-    // Sincroniza os membros do grupo do clube do livro com o sistema folhas.
-    // Sem argumento so mostra a previa; "/folhas aplicar" grava.
+    // Integracao com o sistema folhas (clube do livro):
+    //   /folhas votacao   -> livros e votos da votacao ativa (qualquer membro)
+    //   /folhas status    -> previa da sincronizacao de membros (admins)
+    //   /folhas atualizar -> grava a sincronizacao (admins)
     async handleFolhas(msg, chat, args) {
         const chatId = chat?.id?._serialized || '';
         const allowedChats = [process.env.FOLHAS_GROUP_ID, process.env.DEV_GROUP_ID].filter(Boolean);
@@ -1055,14 +1057,31 @@ class CommandHandler {
             return;
         }
 
-        if (!(await this.isAdmin(msg, chat))) {
-            await msg.reply('❌ Apenas administradores podem sincronizar o Folhas.');
-            return;
-        }
-
-        const apply = String(args?.[0] || '').toLowerCase() === 'aplicar';
+        const subcommand = normalizeCommandText(args?.[0]);
 
         try {
+            if (subcommand === 'votacao') {
+                const voting = await new FolhasSync().getActiveVoting();
+                await msg.reply(voting ? FolhasSync.formatVoting(voting) : 'Não há votação ativa.');
+                return;
+            }
+
+            if (subcommand !== 'status' && subcommand !== 'atualizar') {
+                await msg.reply([
+                    '📚 *Comandos do Folhas*',
+                    '• /folhas votacao — livros e votos da votação atual',
+                    '• /folhas status — prévia da sincronização de membros (admins)',
+                    '• /folhas atualizar — grava a sincronização no Folhas (admins)'
+                ].join('\n'));
+                return;
+            }
+
+            if (!(await this.isAdmin(msg, chat))) {
+                await msg.reply('❌ Apenas administradores podem sincronizar o Folhas.');
+                return;
+            }
+
+            const apply = subcommand === 'atualizar';
             const report = await new FolhasSync({ client: this.client }).run({ apply });
 
             if (apply) {
@@ -1084,7 +1103,7 @@ class CommandHandler {
         } catch (err) {
             console.error('Erro no /folhas:', err?.message || err);
             this.errorLogger?.logError(err, { process: 'bot', context: 'command./folhas' });
-            await msg.reply(`❌ Não consegui sincronizar o Folhas: ${err?.message || 'erro desconhecido'}`);
+            await msg.reply(`❌ Não consegui falar com o Folhas: ${err?.message || 'erro desconhecido'}`);
         }
     }
 
