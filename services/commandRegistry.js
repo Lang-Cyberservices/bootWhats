@@ -11,6 +11,7 @@ const COMMAND_DEFINITIONS = [
     { name: 'ban', aliases: ['/ban'] },
     { name: 'adm', aliases: ['/adm'] },
     { name: 'oraculo', aliases: ['/oraculo', '/oráculo'] },
+    { name: 'dio', aliases: ['/dio', '/diogenes'] },
     { name: 'sobre', aliases: ['/sobre'] },
     { name: 'ajuda', aliases: ['/ajuda', '/help'] },
     { name: 'sticker', aliases: ['/sticker'] },

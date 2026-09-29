@@ -90,7 +90,7 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null, dioService = null) {
         this.auditLogger = auditLogger;
         this.errorLogger = errorLogger;
         this.oracleService = oracleService;
@@ -99,6 +99,7 @@ class CommandHandler {
         this.blockedCommands = blockedCommands;
         this.xadrezGame = xadrezGame;
         this.letrecoGame = letrecoGame;
+        this.dioService = dioService;
         this.client = null;
         this.getBotReadyAt = null;
         this.userIdsCache = new Map();
@@ -281,6 +282,10 @@ class CommandHandler {
 
         if (command === '/oraculo' || command === '/oráculo') {
             return this.handleOraculo(msg, chat);
+        }
+
+        if (command === '/dio' || command === '/diogenes') {
+            return this.handleDio(msg, chat, args);
         }
 
         if (diceCommandInfo?.isDiceCommand) {
@@ -1520,6 +1525,44 @@ class CommandHandler {
         }
 
         await this.oracleService.getWeeklyPrediction(msg, chat);
+    }
+
+    async handleDio(msg, chat, args) {
+        const question = String(args?.join(' ') || '').trim();
+        if (!question) {
+            await msg.reply('❓ Diga algo ao cínico depois do comando. Ex: /dio o que é a felicidade?');
+            return;
+        }
+
+        if (!this.dioService) {
+            await msg.reply('❌ O barril do Diógenes está fechado por hoje.');
+            return;
+        }
+
+        const authorId = getSenderId(msg);
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const usedToday = await prisma.commandLog.count({
+            where: {
+                command: { in: ['/dio', '/diogenes'] },
+                authorId: authorId || undefined,
+                createdAt: { gte: startOfDay }
+            }
+        });
+
+        // handle() já gravou esta própria chamada em commandLog antes do dispatch,
+        // então usedToday inclui a chamada atual: >3 cobre a 4ª chamada em diante.
+        if (usedToday > 3) {
+            await msg.reply(
+                'Já gastei saliva demais com você por hoje. Palavras não são moedas para serem jogadas ao vento de ouvidos desatentos.\n\n' +
+                'Recolha-se. Leve as verdades indigestas que atirei no seu colo e tente mastigá-las em silêncio. ' +
+                'Se não engasgar com elas e a sua mente conseguir digerir alguma coisa útil, retorne amanhã.'
+            );
+            return;
+        }
+
+        await this.dioService.reply(msg, chat, question);
     }
 
     getHoroscopeDateInfo() {
