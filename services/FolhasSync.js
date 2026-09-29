@@ -283,37 +283,63 @@ class FolhasSync {
         );
         if (!session) return null;
 
-        const rows = await prisma.$queryRawUnsafe(
-            `SELECT s.title, s.author, COUNT(v.id) AS vote_count
-               FROM ${this.table('book_suggestions')} s
-               LEFT JOIN ${this.table('book_votes')} v ON v.suggestion_id = s.id
-              WHERE s.session_id = ?
-              GROUP BY s.id
-              ORDER BY vote_count DESC, s.created_at ASC`,
-            session.id
-        );
-        return rows.map((row) => ({
-            title: row.title,
-            author: row.author,
-            votes: Number(row.vote_count)
-        }));
+        const [bookRows, userRows, voteRows] = await Promise.all([
+            prisma.$queryRawUnsafe(
+                `SELECT s.title, s.author, COUNT(v.id) AS vote_count
+                   FROM ${this.table('book_suggestions')} s
+                   LEFT JOIN ${this.table('book_votes')} v ON v.suggestion_id = s.id
+                  WHERE s.session_id = ?
+                  GROUP BY s.id
+                  ORDER BY vote_count DESC, s.created_at ASC`,
+                session.id
+            ),
+            prisma.$queryRawUnsafe(
+                `SELECT id, name FROM ${this.table('users')} WHERE deleted_at IS NULL`
+            ),
+            prisma.$queryRawUnsafe(
+                `SELECT DISTINCT user_id FROM ${this.table('book_votes')} WHERE session_id = ?`,
+                session.id
+            )
+        ]);
+
+        const votedIds = new Set(voteRows.map((row) => Number(row.user_id)));
+        const nonVoters = userRows
+            .filter((user) => !votedIds.has(Number(user.id)))
+            .map((user) => user.name)
+            .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+        return {
+            books: bookRows.map((row) => ({
+                title: row.title,
+                author: row.author,
+                votes: Number(row.vote_count)
+            })),
+            totalRegistered: userRows.length,
+            votedCount: userRows.length - nonVoters.length,
+            nonVoters
+        };
     }
 
-    static formatVoting(list) {
+    static formatVoting(voting) {
+        const { books, totalRegistered, votedCount, nonVoters } = voting;
         const lines = ['📚 *Votação atual*', ''];
-        if (!list.length) {
+        if (!books.length) {
             lines.push('Nenhum livro na votação ainda.');
-            return lines.join('\n');
+        } else {
+            books.forEach((book, index) => {
+                const author = book.author ? ` — ${book.author}` : '';
+                lines.push(`${index + 1}. ${book.title}${author}: ${book.votes} ${book.votes === 1 ? 'voto' : 'votos'}`);
+            });
         }
 
-        list.forEach((book, index) => {
-            const author = book.author ? ` — ${book.author}` : '';
-            lines.push(`${index + 1}. ${book.title}${author}: ${book.votes} ${book.votes === 1 ? 'voto' : 'votos'}`);
-        });
-
-        const total = list.reduce((sum, book) => sum + book.votes, 0);
         lines.push('');
-        lines.push(`Total: ${total} ${total === 1 ? 'voto' : 'votos'}`);
+        lines.push(`${votedCount}/${totalRegistered} pessoas votaram`);
+
+        if (nonVoters.length) {
+            lines.push('');
+            lines.push(`Ainda não votaram: ${nonVoters.join(', ')}`);
+        }
+
         return lines.join('\n');
     }
 
