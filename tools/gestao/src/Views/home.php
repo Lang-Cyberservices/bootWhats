@@ -539,22 +539,28 @@
 
             <button class="cmd" type="button">
                 <span class="name">📊 /rank</span>
-                <span class="desc">Top 5 de mensagens e comandos.</span>
+                <span class="desc">Top 5 de mensagens e comandos — ou top 10 de uma categoria só.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
                         <li><code>/rank</code> — ranking geral.</li>
                         <li><code>/rank diario</code>, <code>/rank semanal</code> ou <code>/rank mensal</code> — ranking do período.</li>
-                        <li><code>/rank xadrez</code> — ranking só do xadrez, com vitórias, empates e derrotas.</li>
+                        <li><code>/rank fala</code>, <code>/rank uso</code> ou <code>/rank jogos</code> — só essa categoria, top 10.</li>
+                        <li>Categoria e período podem vir juntos, em qualquer ordem: <code>/rank fala semanal</code> é igual a <code>/rank semanal fala</code>.</li>
+                        <li><code>/rank xadrez</code> ou <code>/rank letreco</code> — ranking só daquele jogo, com vitórias, empates e derrotas.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>Mostra dois top 5: <strong>quem mais fala</strong> (mensagens) e <strong>quem mais usa o bot</strong> (comandos).</p>
-                    <p>No ranking geral aparece também o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
+                    <p>No ranking geral mostra três top 5: <strong>quem mais fala</strong> (mensagens), <strong>quem mais usa o bot</strong> (comandos) e o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
+                    <p>Pedindo uma categoria isolada (<code>fala</code>, <code>uso</code> ou <code>jogos</code>) o ranking mostra só ela, mas com o dobro de gente: <strong>top 10</strong> em vez de top 5.</p>
+                    <p><code>jogos</code> ainda não tem filtro de período — o placar de jogos é sempre geral, mesmo combinado com <code>diario</code>/<code>semanal</code>/<code>mensal</code>.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
                         <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo + 🎮 placar de jogos</div></div>
                         <div class="ex"><div class="in">/rank semanal</div><div class="out">📊 top 5 da semana</div></div>
+                        <div class="ex"><div class="in">/rank fala semanal</div><div class="out">🏆 top 10 de quem mais fala nesta semana</div></div>
+                        <div class="ex"><div class="in">/rank semanal fala</div><div class="out">🏆 mesmo resultado do exemplo acima</div></div>
+                        <div class="ex"><div class="in">/rank jogos</div><div class="out">🎮 top 10 do placar de jogos</div></div>
                         <div class="ex"><div class="in">/rank xadrez</div><div class="out">♟️ top 5 do xadrez — 75 pontos (2V 1E 1D)</div></div>
                     </div>
                 </div>

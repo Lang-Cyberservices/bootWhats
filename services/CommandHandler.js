@@ -1792,28 +1792,58 @@ class CommandHandler {
         }
     }
 
+    // Le todos os tokens de `/rank`, em qualquer ordem: um filtro de jogo
+    // exclusivo (xadrez/letreco), um período (diario/semanal/mensal) e uma
+    // categoria (fala/uso/jogos). Token não reconhecido é ignorado.
+    parseRankArgs(args) {
+        const tokens = (args || []).map((a) => String(a || '').toLowerCase().trim()).filter(Boolean);
+
+        let gameMode = null;
+        let period = null;
+        let category = null;
+
+        for (const token of tokens) {
+            if (!gameMode && (token === 'xadrez' || token === 'chess')) gameMode = 'xadrez';
+            else if (!gameMode && token === 'letreco') gameMode = 'letreco';
+            else if (!period && (token === 'diario' || token === 'daily')) period = 'day';
+            else if (!period && (token === 'semanal' || token === 'weekly')) period = 'week';
+            else if (!period && (token === 'mensal' || token === 'monthly')) period = 'month';
+            else if (!category && token === 'fala') category = 'fala';
+            else if (!category && (token === 'uso' || token === 'usa')) category = 'uso';
+            else if (!category && (token === 'jogos' || token === 'jogo')) category = 'jogos';
+        }
+
+        if (gameMode) {
+            period = null;
+            category = null;
+        }
+
+        return { gameMode, period, category };
+    }
+
+    // Chave canônica pro rate-limiter: mesma chave não importa a ordem dos
+    // tokens em `/rank` (ex: "fala semanal" e "semanal fala" -> "fala_semanal").
+    rankAttributeKey({ gameMode, period, category }) {
+        if (gameMode) return gameMode;
+        const periodKey = period === 'day' ? 'diario'
+            : period === 'week' ? 'semanal'
+                : period === 'month' ? 'mensal'
+                    : null;
+        return [category, periodKey].filter(Boolean).join('_') || 'sem_atributo';
+    }
+
     async handleEstatisticas(msg, chat, args) {
-        const raw = String(args?.[0] || '').toLowerCase().trim();
-        // `/rank xadrez` e `/rank letreco` não olham para as estatísticas de
-        // mensagens: são rankings próprios, montados em sendGameRank().
-        const gameMode = raw === 'xadrez' || raw === 'chess' ? 'xadrez'
-            : raw === 'letreco' ? 'letreco'
-                : null;
-        const mode = gameMode ? null : (raw === 'diario' || raw === 'daily' ? 'day'
-            : raw === 'semanal' || raw === 'weekly' ? 'week'
-                : raw === 'mensal' || raw === 'monthly' ? 'month'
-                    : null);
+        const { gameMode, period: mode, category } = this.parseRankArgs(args);
         const now = new Date();
 
-        const attributeKey = gameMode
-            ? gameMode
-            : mode === 'day'
-                ? 'diario'
-                : mode === 'month'
-                    ? 'mensal'
-                    : mode === 'week'
-                        ? 'semanal'
-                        : 'sem_atributo';
+        // Placar de jogos ainda não tem histórico por período (game_scores é
+        // um contador que só acumula, sem timestamp por partida).
+        if (category === 'jogos' && mode) {
+            await msg.reply('❌ Ainda não guardo histórico de pontuação de jogos por período — /rank jogos só funciona no modo geral.');
+            return;
+        }
+
+        const attributeKey = this.rankAttributeKey({ gameMode, period: mode, category });
 
         if (mode === 'month' && now.getDate() < 25) {
             await msg.reply('❌ O /rank mensal só pode ser usado depois do dia 25.');
@@ -1825,8 +1855,9 @@ class CommandHandler {
             return;
         }
 
-        const rateLimitedAttributes = new Set(['mensal', 'diario', 'sem_atributo', 'xadrez', 'letreco']);
-        if (rateLimitedAttributes.has(attributeKey)) {
+        // "semanal" puro nunca foi throttlado (comportamento antigo preservado);
+        // toda combinação nova com categoria é throttlada por padrão.
+        if (attributeKey !== 'semanal') {
             const windowStart = new Date(now.getTime() - 30 * 60 * 1000);
 
             const recentLogs = await prisma.commandLog.findMany({
@@ -1849,17 +1880,7 @@ class CommandHandler {
                 }
             };
 
-            const toAttributeKey = (argsList) => {
-                const first = String(argsList?.[0] || '').toLowerCase().trim();
-                if (first === 'diario' || first === 'daily') return 'diario';
-                if (first === 'mensal' || first === 'monthly') return 'mensal';
-                if (first === 'semanal' || first === 'weekly') return 'semanal';
-                if (first === 'xadrez' || first === 'chess') return 'xadrez';
-                if (first === 'letreco') return 'letreco';
-                return 'sem_atributo';
-            };
-
-            const lastSame = recentLogs.find((log) => toAttributeKey(parseArgs(log.args)) === attributeKey);
+            const lastSame = recentLogs.find((log) => this.rankAttributeKey(this.parseRankArgs(parseArgs(log.args))) === attributeKey);
             if (lastSame?.createdAt) {
                 const nextAllowed = new Date(new Date(lastSame.createdAt).getTime() + 30 * 60 * 1000);
                 const hh = String(nextAllowed.getHours()).padStart(2, '0');
@@ -1907,17 +1928,17 @@ class CommandHandler {
 
         await this.logRankCommand(msg, chat, args);
 
+        const topN = category ? 10 : 5;
+        const needMessages = !category || category === 'fala';
+        const needCommands = !category || category === 'uso';
+
         const [topMessages, topCommands] = await Promise.all([
-            statsSource.findMany({
-                where,
-                orderBy: { messagesCount: 'desc' },
-                take: 5
-            }),
-            statsSource.findMany({
-                where,
-                orderBy: { commandsCount: 'desc' },
-                take: 5
-            })
+            needMessages
+                ? statsSource.findMany({ where, orderBy: { messagesCount: 'desc' }, take: topN })
+                : Promise.resolve([]),
+            needCommands
+                ? statsSource.findMany({ where, orderBy: { commandsCount: 'desc' }, take: topN })
+                : Promise.resolve([])
         ]);
 
         const uniqueIds = new Set([
@@ -1949,45 +1970,46 @@ class CommandHandler {
         };
 
         const title = mode === 'day'
-            ? 'Top 5 do dia'
+            ? `Top ${topN} do dia`
             : mode === 'week'
-                ? 'Top 5 da semana'
+                ? `Top ${topN} da semana`
                 : mode === 'month'
-                    ? 'Top 5 do mês'
-                    : 'Top 5 gerais';
+                    ? `Top ${topN} do mês`
+                    : `Top ${topN} gerais`;
 
-        const lines = [
-            `📊 *${title}*`,
-            '',
-            '🏆 *Quem mais fala:*',
-            ...fmt(topMessages, 'messagesCount'),
-            '',
-            '⚡ *Quem mais me usa:*',
-            ...fmt(topCommands, 'commandsCount')
-        ];
+        const sections = [];
+        if (needMessages) sections.push(['🏆 *Quem mais fala:*', ...fmt(topMessages, 'messagesCount')]);
+        if (needCommands) sections.push(['⚡ *Quem mais me usa:*', ...fmt(topCommands, 'commandsCount')]);
 
-        if (!mode) {
+        if (!mode && (!category || category === 'jogos')) {
             try {
-                // Placar único: soma o que a pessoa fez na forca e no xadrez.
+                // Placar único: soma o que a pessoa fez na forca, no xadrez e no letreco.
                 const topGameScores = await prisma.gameScore.groupBy({
                     by: ['authorId'],
                     where: { chatId: chat?.id?._serialized },
                     _sum: { totalPoints: true, wins: true, draws: true, losses: true },
                     orderBy: { _sum: { totalPoints: 'desc' } },
-                    take: 5
+                    take: topN
                 });
 
                 if (topGameScores.length) {
-                    lines.push('', '🎮 *Jogos — pontuação:*');
+                    const gameLines = ['🎮 *Jogos — pontuação:*'];
                     for (const [i, score] of topGameScores.entries()) {
                         const label = await this.resolveScoreLabel(score.authorId, labelById);
-                        lines.push(`${i + 1}. ${label} — ${this.formatScoreLine(score._sum)}`);
+                        gameLines.push(`${i + 1}. ${label} — ${this.formatScoreLine(score._sum)}`);
                     }
+                    sections.push(gameLines);
                 }
             } catch (err) {
                 console.warn('Falha ao buscar pontuação de jogos para /rank:', err?.message || err);
             }
         }
+
+        const lines = [`📊 *${title}*`, ''];
+        sections.forEach((section, i) => {
+            if (i > 0) lines.push('');
+            lines.push(...section);
+        });
 
         await msg.reply(lines.join('\n'));
     }
