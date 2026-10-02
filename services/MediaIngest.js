@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { getSenderId } = require('./messageUtils');
 const { saveEvidence, getExtension, decodeMediaBuffer } = require('./mediaUtils');
 const MediaQueue = require('./MediaQueue');
+const { withMediaTimeout } = require('./mediaHealth');
 
 // Lado do bot: baixa a mídia, calcula o md5, consulta o cache e enfileira.
 // Nada de sharp/tfjs aqui — é isso que mantém o event loop livre para o
@@ -39,7 +40,7 @@ class MediaIngest {
 
             let media;
             try {
-                media = await msg.downloadMedia();
+                media = await withMediaTimeout(msg.downloadMedia(), 'ingest.download');
             } catch (err) {
                 console.warn('Falha ao baixar mídia:', err?.message || err);
                 return;

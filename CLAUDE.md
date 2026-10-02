@@ -141,6 +141,7 @@ behavior) without a redeploy.
 | `FolhasSync.js` | `/folhas` — syncs the book-club group with the `folhas` system's `users` table and reports the active vote (see below) |
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
+| `mediaHealth.js` | Timeout for media download/send; counts consecutive timeouts and fires the reconnect |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
 | `games/forca.js` | `/forca` — hangman, free-for-all, static images from `storage/forca/` |
 | `games/xadrez.js` | `/xadrez` — 1v1 chess, rules via `chess.js`, strict turns, expiry sweeper |
@@ -180,6 +181,16 @@ exactly the state that triggers a reconnect. So `destroyClient()` races it again
 serialized through a single `reconnectPromise`, because the watchdog and the `disconnected` event
 can fire together and used to open a second Chromium. `SIGINT`/`SIGTERM`/`exit` handlers tear the
 browser down so `pm2 restart` doesn't leave one orphaned.
+
+The watchdog only checks `getState()`, which misses one failure mode: WhatsApp Web's media pipeline
+stalls inside the page (downloads and uploads never resolve) while text keeps working and the
+socket stays `CONNECTED`. `services/mediaHealth.js` covers it — `withMediaTimeout` caps every
+`downloadMedia()` and every media `client.sendMessage` at `MEDIA_OP_TIMEOUT_MS` (instead of the
+5-minute Puppeteer `protocolTimeout`), and `MEDIA_STALL_THRESHOLD` consecutive timeouts trigger
+`triggerClientReconnect()` plus a `media.stalled` row in `error_logs` carrying a snapshot of the
+page (uptime, socket state, heap). The root cause is still unknown; those rows are the evidence.
+The wrapper swallows the late rejection of the original promise on purpose — otherwise it would hit
+the global `unhandledRejection` handler and kill the process.
 
 **Media sending compatibility**
 Sending images broke when WhatsApp Web changed its internal media format: `MediaData` carries a

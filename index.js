@@ -1,7 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { withMediaTimeout, onStall: onMediaStall } = require('./services/mediaHealth');
 const qrcode = require('qrcode-terminal');
 const MessageFilter = require('./services/MessageFilter');
 const MediaIngest = require('./services/MediaIngest');
@@ -270,8 +271,52 @@ const client = new Client({
 // O sendSeen do WhatsApp Web atual trava o envio de texto e imagem. Message.reply
 // e chat.sendMessage passam por client.sendMessage, então este wrapper cobre tudo.
 const originalSendMessage = client.sendMessage.bind(client);
-client.sendMessage = (chatId, content, options) =>
-    originalSendMessage(chatId, content, { ...(options || {}), sendSeen: false });
+client.sendMessage = (chatId, content, options) => {
+    const sending = originalSendMessage(chatId, content, { ...(options || {}), sendSeen: false });
+    const hasMedia = content instanceof MessageMedia || options?.media instanceof MessageMedia;
+    return hasMedia ? withMediaTimeout(sending, 'send') : sending;
+};
+
+// Três timeouts de mídia seguidos: o pipeline de mídia do WhatsApp Web travou
+// (texto segue funcionando, getState() segue CONNECTED). Só recriar o Chromium
+// resolve — o mesmo que o restart manual fazia.
+onMediaStall(async ({ label, threshold, timeoutMs }) => {
+    if (!isClientReady) return;
+    const diagnostics = await collectMediaStallDiagnostics();
+    console.warn(`⚠️ Mídia travada (${threshold} timeouts seguidos). Reconectando...`, diagnostics);
+    errorLogger.logError(
+        new Error(`Pipeline de mídia travado: ${threshold} timeouts de ${timeoutMs}ms (último: ${label}) | ${JSON.stringify(diagnostics)}`),
+        { process: 'bot', context: 'media.stalled' }
+    );
+    await triggerClientReconnect();
+});
+
+// Retrato da página no momento do travamento, para achar a causa depois no
+// painel de erros. Melhor esforço: a página pode nem responder.
+async function collectMediaStallDiagnostics() {
+    const base = {
+        uptimeMin: botReadyAt ? Math.round((Date.now() - botReadyAt) / 60_000) : null
+    };
+    try {
+        const page = await Promise.race([
+            client.pupPage.evaluate(() => {
+                const safe = (fn) => { try { return fn(); } catch (e) { return `erro: ${e.message}`; } };
+                return {
+                    onLine: navigator.onLine,
+                    visibility: document.visibilityState,
+                    wwebVersion: safe(() => window.Debug.VERSION),
+                    socketState: safe(() => window.require('WAWebSocketModel').Socket.state),
+                    socketStream: safe(() => window.require('WAWebSocketModel').Socket.stream),
+                    heapMB: safe(() => Math.round(performance.memory.usedJSHeapSize / 1e6))
+                };
+            }),
+            sleep(10_000).then(() => ({ page: 'sem resposta em 10s' }))
+        ]);
+        return { ...base, ...page };
+    } catch (err) {
+        return { ...base, page: `erro: ${err?.message || err}` };
+    }
+}
 
 commandHandler.setClient(client);
 forcaGame.setClient(client);

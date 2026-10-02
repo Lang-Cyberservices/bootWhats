@@ -7,6 +7,7 @@ const { prisma } = require('./database');
 const FolhasSync = require('./FolhasSync');
 const ytdl = require('@distube/ytdl-core');
 const { saveEvidence } = require('./mediaUtils');
+const { withMediaTimeout } = require('./mediaHealth');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const os = require('node:os');
@@ -1470,7 +1471,13 @@ class CommandHandler {
             return;
         }
 
-        const media = await quotedMsg.downloadMedia();
+        let media;
+        try {
+            media = await withMediaTimeout(quotedMsg.downloadMedia(), 'proibir.download');
+        } catch (err) {
+            console.warn('Falha ao baixar mídia do /proibir:', err?.message || err);
+            media = null;
+        }
         if (!media) {
             await msg.reply('❌ Não consegui baixar a mídia.');
             return;
@@ -2279,7 +2286,7 @@ _versão: 3.1.0_`;
         }
 
         try {
-            const media = await quotedMsg.downloadMedia();
+            const media = await withMediaTimeout(quotedMsg.downloadMedia(), 'sticker.download');
             if (!media) {
                 await msg.reply('❌ Até a arte precisa de matéria-prima. Não consegui baixar a mídia para criar a figurinha. Tente novamente.');
                 return;
