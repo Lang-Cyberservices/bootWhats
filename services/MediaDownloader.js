@@ -21,11 +21,13 @@ const MAX_WAITING = 3;
 
 const KINDS = {
     video: {
-        maxDurationS: 120,
+        maxDurationS: 300,
         ext: 'mp4',
         // `bv+ba` e nao `bv*`: o formato combinado do YouTube (18) responde 403
         // no download; `/b` cobre os sites que so tem arquivo unico.
-        args: ['-f', 'bv+ba/b', '-S', 'vcodec:h264,res:480,acodec:m4a', '--merge-output-format', 'mp4', '--remux-video', 'mp4']
+        // O teto de 11M no video deixa folga para o audio (~5 MB em 5 min)
+        // dentro dos 16 MB: se o 480p nao couber, cai para uma resolucao menor.
+        args: ['-f', 'bv[filesize<11M]+ba/bv+ba/b', '-S', 'vcodec:h264,res:480,acodec:m4a', '--merge-output-format', 'mp4', '--remux-video', 'mp4']
     },
     audio: {
         maxDurationS: 600,

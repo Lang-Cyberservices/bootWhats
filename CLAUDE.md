@@ -270,9 +270,10 @@ with 3 fails and no success ever is set `active = false` inside `recordFail`.
 probes still pending are aborted without a fail, since slow is not dead — then downloads
 sequentially through the ones that answered. Only a finished download counts as `success`. Not every failure is the proxy's
 fault: errors matching `CONTENT_ERROR_PATTERN` (private, removed, unsupported URL), a duration over
-the limit (2 min video / 10 min audio) or a file over 16 MB stop the request **without** touching the
+the limit (5 min video / 10 min audio) or a file over 16 MB stop the request **without** touching the
 counters. "Sign in to confirm you're not a bot" is the opposite — the proxy's IP is blocked, so it
-counts as a fail. Video uses `-f bv+ba/b`, not `bv*`: YouTube's combined format 18 answers 403 on
+counts as a fail. Video uses `-f bv[filesize<11M]+ba/bv+ba/b` (the size cap drops the resolution until a 5-minute
+video fits in 16 MB), not `bv*`: YouTube's combined format 18 answers 403 on
 download even without a proxy. Downloads are serialized (one at a time, 3 waiting) because each one
 already spawns 10 `yt-dlp` processes for the probe. URLs pointing at localhost/private IPs are
 refused before `yt-dlp` runs.
