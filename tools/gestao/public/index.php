@@ -11,6 +11,7 @@ use Gestao\Controllers\BooksController;
 use Gestao\Controllers\CountryController;
 use Gestao\Controllers\ErrorLogController;
 use Gestao\Controllers\JokeController;
+use Gestao\Controllers\ProxyController;
 use Gestao\Controllers\SystemController;
 use Gestao\Controllers\WelcomeController;
 use Gestao\Repositories\AdminRepository;
@@ -19,6 +20,7 @@ use Gestao\Repositories\BooksDownloadRepository;
 use Gestao\Repositories\CountryRepository;
 use Gestao\Repositories\ErrorLogRepository;
 use Gestao\Repositories\JokeRepository;
+use Gestao\Repositories\ProxyRepository;
 use Gestao\Repositories\WelcomeConfigRepository;
 
 require __DIR__ . '/../src/Config.php';
@@ -31,6 +33,7 @@ require __DIR__ . '/../src/Repositories/BookRecommendationRepository.php';
 require __DIR__ . '/../src/Repositories/CountryRepository.php';
 require __DIR__ . '/../src/Repositories/ErrorLogRepository.php';
 require __DIR__ . '/../src/Repositories/JokeRepository.php';
+require __DIR__ . '/../src/Repositories/ProxyRepository.php';
 require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
@@ -38,6 +41,7 @@ require __DIR__ . '/../src/Controllers/BooksController.php';
 require __DIR__ . '/../src/Controllers/CountryController.php';
 require __DIR__ . '/../src/Controllers/ErrorLogController.php';
 require __DIR__ . '/../src/Controllers/JokeController.php';
+require __DIR__ . '/../src/Controllers/ProxyController.php';
 require __DIR__ . '/../src/Controllers/SystemController.php';
 require __DIR__ . '/../src/Controllers/WelcomeController.php';
 
@@ -51,6 +55,7 @@ $jokesRepo = new JokeRepository($db->pdo());
 $welcomeRepo = new WelcomeConfigRepository($db->pdo());
 $countriesRepo = new CountryRepository($db->pdo());
 $errorLogsRepo = new ErrorLogRepository($db->pdo());
+$proxiesRepo = new ProxyRepository($db->pdo());
 $auth = new Auth($adminsRepo);
 $middleware = new Middleware($adminsRepo);
 
@@ -62,6 +67,7 @@ $systemController = new SystemController();
 $welcomeController = new WelcomeController($welcomeRepo);
 $countryController = new CountryController($countriesRepo);
 $errorLogController = new ErrorLogController($errorLogsRepo);
+$proxyController = new ProxyController($proxiesRepo);
 
 $path = rtrim((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
 
@@ -112,6 +118,9 @@ switch ($route) {
         break;
     case 'jokes':
         $jokeController->index();
+        break;
+    case 'proxies':
+        $proxyController->index();
         break;
     case 'errors':
     default:

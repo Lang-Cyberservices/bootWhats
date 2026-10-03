@@ -424,3 +424,18 @@ model ErrorLog {
   @@index([resolved, createdAt])
   @@map("error_logs")
 }
+
+model Proxy {
+  id         Int       @id @default(autoincrement())
+  url        String    @db.VarChar(191)
+  port       Int
+  active     Boolean   @default(true)
+  success    Int       @default(0)
+  fails      Int       @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([url, port])
+  @@index([active, fails])
+  @@map("proxies")
+}

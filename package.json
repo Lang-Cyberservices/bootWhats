@@ -12,7 +12,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "@google/generative-ai": "^0.21.0",
     "@prisma/adapter-mariadb": "^7.4.2",
     "@prisma/client": "^7.4.2",

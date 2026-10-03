@@ -33,6 +33,8 @@ const COMMAND_DEFINITIONS = [
     { name: 'letreco', aliases: ['/letreco'] },
     { name: 'pais', aliases: ['/pais'] },
     { name: 'folhas', aliases: ['/folhas'] },
+    { name: 'video', aliases: ['/video'] },
+    { name: 'musica', aliases: ['/musica', '/música'] },
     { name: 'fechar', aliases: ['/fechar'], protected: true },
     { name: 'abrir', aliases: ['/abrir'], protected: true }
 ];

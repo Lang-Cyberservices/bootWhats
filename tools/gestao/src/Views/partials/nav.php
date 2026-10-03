@@ -8,6 +8,7 @@ $navItems = [
     'books' => ['route' => 'books', 'label' => 'Livros'],
     'welcome' => ['route' => 'welcome', 'label' => 'Boas vindas'],
     'countries' => ['route' => 'countries', 'label' => 'Paises'],
+    'proxies' => ['route' => 'proxies', 'label' => 'Proxies'],
     'system' => ['route' => 'system', 'label' => 'Sistema'],
 ];
 ?>

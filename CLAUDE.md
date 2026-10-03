@@ -140,6 +140,8 @@ behavior) without a redeploy.
 | `VersionAnnouncer.js` | Broadcasts pending rows from `version_announcements` on the `ready` event, then marks them sent |
 | `FolhasSync.js` | `/folhas` — syncs the book-club group with the `folhas` system's `users` table and reports the active vote (see below) |
 | `MessageFilter.js` | Keyword-based message filter (currently commented out in `index.js`) |
+| `ProxyPool.js` | Only access to the `proxies` table: picks 10 candidates, records success/fail, auto-deactivates |
+| `MediaDownloader.js` | `/video` and `/musica` — runs `yt-dlp` through the proxy pool (parallel probe, then download) |
 | `mediaUtils.js` | Saves deleted media as evidence files |
 | `mediaHealth.js` | Timeout for media download/send; counts consecutive timeouts and fires the reconnect |
 | `messageUtils.js` | Extracts consistent sender IDs from messages |
@@ -255,6 +257,25 @@ from `countries.code`, longest prefix wins), and Brazilian numbers are matched o
 because WhatsApp still reports old accounts without the ninth digit. `@lid` participants are resolved
 with `getContactLidAndPhone`; if any stays unresolved, **no one is deactivated** in that run — the
 unknown participant could be an existing user.
+
+**Proxy pool and `/video` / `/musica`**
+Both commands shell out to `yt-dlp` (and `ffmpeg` for merging / mp3) — neither is installed by the
+deploy workflow, so they must exist on the server. Every request goes through free proxies stored in
+`proxies` (`url` = scheme + host, `port`, `active`, `success`, `fails`); the initial list was seeded
+by the `seed_proxies` migration and new lists are pasted into the gestao panel (`?route=proxies`).
+`ProxyPool.pickCandidates()` returns 10: the 5 best by `success - fails` (ties by lowest `id`), then
+5 random ones with `fails = 0` — that second half is how untested proxies get discovered. A proxy
+with 3 fails and no success ever is set `active = false` inside `recordFail`.
+`MediaDownloader` probes all 10 in parallel (metadata only) and stops as soon as 3 answer — the
+probes still pending are aborted without a fail, since slow is not dead — then downloads
+sequentially through the ones that answered. Only a finished download counts as `success`. Not every failure is the proxy's
+fault: errors matching `CONTENT_ERROR_PATTERN` (private, removed, unsupported URL), a duration over
+the limit (2 min video / 10 min audio) or a file over 16 MB stop the request **without** touching the
+counters. "Sign in to confirm you're not a bot" is the opposite — the proxy's IP is blocked, so it
+counts as a fail. Video uses `-f bv+ba/b`, not `bv*`: YouTube's combined format 18 answers 403 on
+download even without a proxy. Downloads are serialized (one at a time, 3 waiting) because each one
+already spawns 10 `yt-dlp` processes for the probe. URLs pointing at localhost/private IPs are
+refused before `yt-dlp` runs.
 
 **HTTP ingest API**
 An Express server (`startIngestServer`) listens on `HTTP_INGEST_PORT` (default 5000) and accepts `POST /` with `{ key, message }` to send a message to `HTTP_INGEST_GROUP_ID`. All other routes return 404 with an empty body to avoid fingerprinting.

@@ -5,11 +5,9 @@ const sharp = require('sharp');
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('./database');
 const FolhasSync = require('./FolhasSync');
-const ytdl = require('@distube/ytdl-core');
+const MediaDownloader = require('./MediaDownloader');
 const { saveEvidence } = require('./mediaUtils');
 const { withMediaTimeout } = require('./mediaHealth');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -319,9 +317,13 @@ class CommandHandler {
             return this.handlePiada(msg, chat);
         }
 
-        // if (command === '/youtube') {
-        //     return this.handleYouTube(msg, chat, args);
-        // }
+        if (command === '/video') {
+            return this.handleMediaDownload(msg, chat, args, 'video');
+        }
+
+        if (command === '/musica' || command === '/música') {
+            return this.handleMediaDownload(msg, chat, args, 'audio');
+        }
 
         if (command === '/proibir') {
             return this.handleProibir(msg, chat);
@@ -2399,57 +2401,68 @@ _versão: 3.1.0_`;
         }
     }
 
-    async handleYouTube(msg, chat, args) {
+    // /video e /musica: baixa com yt-dlp pelo pool de proxies (MediaDownloader)
+    // e devolve o arquivo no grupo.
+    async handleMediaDownload(msg, chat, args, kind) {
+        const isAudio = kind === 'audio';
+        const commandName = isAudio ? '/musica' : '/video';
         const url = args[0];
 
         if (!url) {
-            await msg.reply('❌ Queres um vídeo sem apontar o caminho. Envie algo como: /youtube https://youtu.be/algum_video_curto');
+            await msg.reply(`❌ Queres ${isAudio ? 'uma música' : 'um vídeo'} sem apontar o caminho. Envie algo como: ${commandName} https://youtu.be/algum_link`);
             return;
         }
 
-        if (!ytdl.validateURL(url)) {
-            await msg.reply('❌ Até Diógenes reconheceria um caminho torto: este não parece ser um link válido do YouTube.');
+        if (!MediaDownloader.isAllowedUrl(url)) {
+            await msg.reply('❌ Até Diógenes reconheceria um caminho torto: este não parece ser um link válido.');
             return;
         }
-
-        const execFileAsync = promisify(execFile);
-        const tmpName = `yt_${Date.now()}.mp4`;
-        const tmpPath = path.join(os.tmpdir(), tmpName);
 
         try {
-            await execFileAsync('yt-dlp', [
-                '--no-playlist',
-                '--match-filter',
-                'duration <= 120',
-                '--max-filesize',
-                '16M',
-                '-f',
-                'mp4',
-                '-o',
-                tmpPath,
-                url
-            ]);
+            await msg.react('⏳');
+        } catch (_) {}
 
-            const buffer = await fs.readFile(tmpPath);
-            const maxBytes = 16 * 1024 * 1024; // ~16MB
-            if (buffer.length > maxBytes) {
-                await msg.reply('📦 O vídeo que trouxeste pesa mais do que esta ágora suporta. Tente um link mais curto ou leve.');
-                return;
-            }
+        try {
+            const file = await MediaDownloader.download(url, kind);
+            const expectedExt = MediaDownloader.KINDS[kind].ext;
+            const baseName = String(file.title || (isAudio ? 'musica' : 'video'))
+                .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+                .trim()
+                .slice(0, 80) || 'arquivo';
+            const mimetype = file.ext !== expectedExt
+                ? 'application/octet-stream'
+                : (isAudio ? 'audio/mpeg' : 'video/mp4');
+            const media = new MessageMedia(mimetype, file.buffer.toString('base64'), `${baseName}.${file.ext}`);
 
-            const media = new MessageMedia('video/mp4', buffer.toString('base64'), 'video.mp4');
-            await chat.sendMessage(media, { sendVideoAsDocument: false });
+            await withMediaTimeout(
+                chat.sendMessage(media, {
+                    quotedMessageId: msg.id?._serialized,
+                    // Formato inesperado nao toca inline no WhatsApp; vai como arquivo.
+                    sendMediaAsDocument: file.ext !== expectedExt
+                }),
+                `${kind}.send`
+            );
         } catch (err) {
-            if (err?.code === 'ENOENT') {
-                await msg.reply('❌ yt-dlp não está instalado no servidor. Instale e tente novamente.');
-                return;
+            const maxMinutes = MediaDownloader.KINDS[kind].maxDurationS / 60;
+            const replyByCode = {
+                QUEUE_FULL: '⏳ A fila de downloads está cheia. Espere os outros terminarem e tente de novo.',
+                TOO_LONG: `📏 Longo demais: ${commandName} aceita até ${maxMinutes} minutos.`,
+                TOO_BIG: '📦 O arquivo que trouxeste pesa mais do que esta ágora suporta (16 MB). Tente um link mais curto ou leve.',
+                CONTENT: '❌ Este link não está disponível: privado, removido, ao vivo ou de um site que não conheço.',
+                NO_PROXIES: '❌ Não tenho nenhum caminho disponível para buscar isso agora. Tente mais tarde.',
+                ALL_PROXIES_FAILED: '❌ Bati em dez portas e nenhuma abriu. Não consegui baixar agora; tente de novo em instantes.',
+                YTDLP_MISSING: '❌ yt-dlp não está instalado no servidor.'
+            };
+
+            if (err?.code === 'YTDLP_MISSING') {
+                this.errorLogger?.logError(err, { process: 'bot', context: `command.${commandName}` });
             }
-            console.error('Erro ao baixar vídeo do YouTube:', err);
-            await msg.reply('❌ Até os bytes se rebelam às vezes. Não consegui trazer este vídeo do YouTube; tente outro link ou tente mais tarde.');
-        } finally {
-            try {
-                await fs.unlink(tmpPath);
-            } catch (_) {}
+            if (!replyByCode[err?.code]) {
+                console.error(`Erro no ${commandName}:`, err);
+                if (this.isProtocolTimeoutError(err)) return;
+            }
+
+            await this.safeReply(msg, replyByCode[err?.code] || '❌ Até os bytes se rebelam às vezes. Não consegui trazer este arquivo; tente outro link ou tente mais tarde.');
         }
     }
 }
