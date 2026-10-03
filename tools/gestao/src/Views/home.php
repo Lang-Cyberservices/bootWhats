@@ -1,3 +1,6 @@
+<?php
+/** @var ?string $currentVersion */
+?>
 <!doctype html>
 <html lang="pt-br">
 <head>
@@ -354,6 +357,24 @@
         <div class="comandos-grid">
 
             <button class="cmd" type="button">
+                <span class="name">❓ /ajuda · /help</span>
+                <span class="desc">Lista de comandos disponíveis.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/ajuda</code> ou <code>/help</code>, sem parâmetros.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Exibe no grupo a lista de todos os comandos com uma descrição curta de cada um.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/ajuda</div><div class="out">📖 lista completa de comandos no chat</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
                 <span class="name">🔨 /ban<span class="badge-adm">ADMINS</span></span>
                 <span class="desc">Remove um usuário do grupo.</span>
                 <span class="more">[ + detalhes ]</span>
@@ -374,58 +395,57 @@
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">🚫 /proibir<span class="badge-adm">ADMINS</span></span>
-                <span class="desc">Bloqueia uma imagem ou figurinha.</span>
+                <span class="name">📚 /books · /livros</span>
+                <span class="desc">Biblioteca virtual e recomendações.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li>Responda a imagem ou figurinha com <code>/proibir</code>.</li>
+                        <li><code>/books</code> ou <code>/livros</code>, sem parâmetros.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>Disponível <strong>apenas para administradores</strong>. A mídia é apagada e sua assinatura fica bloqueada: se alguém enviar o mesmo conteúdo de novo, o bot remove automaticamente.</p>
+                    <p>Exibe os <strong>links ativos da biblioteca virtual</strong>, o <strong>top de livros</strong> da última segunda-feira e a <strong>recomendação mais recente do Dio</strong>.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">(respondendo uma figurinha) /proibir</div><div class="out">apaga a figurinha e bloqueia reenvios</div></div>
+                        <div class="ex"><div class="in">/livros</div><div class="out">📚 links da biblioteca + top + recomendação do Dio</div></div>
                     </div>
                 </div>
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">🔮 /oraculo</span>
-                <span class="desc">Sua previsão mística da semana.</span>
+                <span class="name">🕵️ /check</span>
+                <span class="desc">Estatísticas de um usuário.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li><code>/oraculo</code> (ou <code>/oráculo</code>), sem parâmetros.</li>
+                        <li><code>/check @usuario</code> — mencione quem quer investigar.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>O oráculo consulta os astros (e uma IA) e entrega uma previsão personalizada. A previsão é <strong>uma por semana</strong>: consultas repetidas na mesma semana retornam a mesma profecia.</p>
+                    <p>Mostra as estatísticas do usuário: <strong>mensagens</strong> (hoje, semana, mês e geral), <strong>imagens removidas</strong> pela moderação e <strong>uso de comandos</strong>.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/oraculo</div><div class="out">🔮 sua previsão da semana, direto do plano astral</div></div>
+                        <div class="ex"><div class="in">/check @fulano</div><div class="out">🕵️ dossiê completo de atividade do fulano</div></div>
                     </div>
                 </div>
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">✨ /horoscopo · /signo</span>
-                <span class="desc">Horóscopo do dia do seu signo.</span>
+                <span class="name">💱 /cotacao</span>
+                <span class="desc">Cotações de moedas em BRL.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li><code>/horoscopo</code> — usa o signo já cadastrado e retorna o horóscopo do dia.</li>
-                        <li><code>/horoscopo [signo]</code> — cadastra/atualiza seu signo e já retorna a previsão.</li>
-                        <li><code>/signo</code> e <code>/horóscopo</code> funcionam igual.</li>
+                        <li><code>/cotacao</code> — retorna todas as cotações.</li>
+                        <li><code>/cotacao [moeda]</code> — retorna só a moeda escolhida.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>Signos aceitos (em português): <strong>áries, touro, gêmeos, câncer, leão, virgem, libra, escorpião, sagitário, capricórnio, aquário e peixes</strong> — com ou sem acento.</p>
+                    <p>Moedas aceitas: <strong>dollar</strong>, <strong>dollar canadense</strong>, <strong>yen</strong>, <strong>euro</strong>, <strong>libra</strong>, <strong>yuan</strong> (ou renminbi) e <strong>bitcoin</strong> — sempre em relação ao real (BRL). O comando tem um <strong>intervalo mínimo entre usos</strong> no grupo; se alguém usou há pouco, o bot pede para aguardar.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/signo touro</div><div class="out">cadastra Touro ♉ e responde a previsão do dia</div></div>
-                        <div class="ex"><div class="in">/horoscopo</div><div class="out">previsão do dia do seu signo cadastrado</div></div>
+                        <div class="ex"><div class="in">/cotacao</div><div class="out">💱 todas as moedas + bitcoin em BRL</div></div>
+                        <div class="ex"><div class="in">/cotacao euro</div><div class="out">💱 só a cotação do euro</div></div>
                     </div>
                 </div>
             </button>
@@ -465,19 +485,204 @@
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">😂 /piada</span>
-                <span class="desc">Uma piada aleatória do bot.</span>
+                <span class="name">📖 /definir</span>
+                <span class="desc">Busca a definição de uma palavra.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li><code>/piada</code>, sem parâmetros.</li>
+                        <li><code>/definir [palavra]</code> — ex.: <code>/definir casa</code>.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>Sorteia uma piada do acervo do Diogenes. A qualidade não é garantida — o orçamento era meio sanduíche de presunto.</p>
+                    <p>Procura a palavra no dicionário do bot e retorna os significados cadastrados como <strong>substantivo</strong>, <strong>verbo</strong>, <strong>adjetivo</strong> e <strong>advérbio</strong> (só aparecem os que existirem para a palavra).</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/piada</div><div class="out">😂 uma piada aleatória do acervo</div></div>
+                        <div class="ex"><div class="in">/definir casa</div><div class="out">📖 definição de "casa"</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🏺 /dio · /diogenes</span>
+                <span class="desc">Pergunte qualquer coisa ao filósofo cínico.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/dio sua pergunta</code> ou <code>/diogenes sua pergunta</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>O próprio Diógenes responde, em até dois parágrafos curtos, com a honestidade ríspida e o sarcasmo de quem mora num barril. Não espere gentileza. Limite de <strong>3 perguntas por pessoa por dia</strong>.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/dio o que é a felicidade?</div><div class="out">uma resposta curta, direta e pouco lisonjeira</div></div>
+                        <div class="ex"><div class="in">/diogenes vale a pena trocar de celular todo ano?</div><div class="out">o cínico comenta a sua vaidade</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎬 /filme</span>
+                <span class="desc">Busca filmes no TheMovieDB.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/filme [nome do filme]</code> — ex.: <code>/filme matrix</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Busca o filme no <strong>TheMovieDB</strong> e retorna até <strong>3 resultados</strong>, cada um com a <strong>capa</strong>, o <strong>ano de lançamento</strong>, o <strong>título original</strong> e a <strong>sinopse</strong>.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/filme matrix</div><div class="out">🎬 até 3 filmes com capa, título original e sinopse</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎯 /forca</span>
+                <span class="desc">Jogo da forca em grupo: palavras, filmes ou países.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/forca</code> — <strong>sorteia um dos modos abaixo</strong> e inicia a partida.</li>
+                        <li><code>/forca dicionario</code> — qualquer palavra do dicionário do bot.</li>
+                        <li><code>/forca filmes</code> — um filme da base do bot.</li>
+                        <li><code>/forca pais</code> — um país.</li>
+                        <li><code>/forca substantivo</code> · <code>verbo</code> · <code>adjetivo</code> · <code>advérbio</code> — uma palavra daquela classe gramatical.</li>
+                    </ul>
+                    <p>Os modos funcionam no singular ou no plural (<code>/forca pais</code> ou <code>/forca paises</code>, <code>/forca verbo</code> ou <code>/forca verbos</code>), e o acento é opcional. Um modo desconhecido não inicia partida: o bot responde com a lista de opções válidas.</p>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
+                    <p>Nos modos <strong>países</strong> e <strong>filmes</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, ou a bandeira e a descrição do país.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 7 modos e inicia a partida</div></div>
+                        <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
+                        <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">✨ /horoscopo · /signo</span>
+                <span class="desc">Horóscopo do dia do seu signo.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/horoscopo</code> — usa o signo já cadastrado e retorna o horóscopo do dia.</li>
+                        <li><code>/horoscopo [signo]</code> — cadastra/atualiza seu signo e já retorna a previsão.</li>
+                        <li><code>/signo</code> e <code>/horóscopo</code> funcionam igual.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Signos aceitos (em português): <strong>áries, touro, gêmeos, câncer, leão, virgem, libra, escorpião, sagitário, capricórnio, aquário e peixes</strong> — com ou sem acento.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/signo touro</div><div class="out">cadastra Touro ♉ e responde a previsão do dia</div></div>
+                        <div class="ex"><div class="in">/horoscopo</div><div class="out">previsão do dia do seu signo cadastrado</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🟩 /letreco</span>
+                <span class="desc">Letreco (estilo Wordle) em grupo, com tabuleiro em imagem.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/letreco</code> — <strong>sorteia a categoria</strong> e inicia a partida.</li>
+                        <li><code>/letreco dicionario</code> — uma palavra do dicionário, de 5 a 8 letras.</li>
+                        <li><code>/letreco filme</code> — um filme da base do bot.</li>
+                        <li><code>/letreco pais</code> — um país.</li>
+                        <li>Responder a imagem com o palpite — <code>PORTA</code>, <code>porta</code> ou <code>pórta</code> dão no mesmo.</li>
+                        <li><code>/letreco encerrar</code> — encerra a partida (quem começou ou um administrador do grupo).</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez, e o palpite só vale como <strong>resposta à imagem mais recente</strong> do tabuleiro — responder a um tabuleiro antigo não consome tentativa. São <strong>10 tentativas</strong> no total, compartilhadas pelo grupo: cada palpite pinta as letras de <strong>verde</strong> (letra certa no lugar certo), <strong>amarelo</strong> (letra certa no lugar errado) ou <strong>vermelho</strong> (letra que não existe). Letras repetidas só ficam coloridas na quantidade em que aparecem na resposta.</p>
+                    <p>Depois de jogar, a vez passa para outra pessoa: quem acabou de jogar só pode jogar de novo <strong>1 minuto</strong> depois, ou assim que outra pessoa jogar. Palpites com número de letras diferente da resposta não consomem tentativa nem mudam a vez. Espaços e acentos não entram na contagem, e nas categorias de filme e país o tabuleiro mostra a separação entre as palavras — o que revela o tamanho de cada uma, mas nenhuma letra.</p>
+                    <p>Quem acerta ganha <strong>5 pontos mais 3 por tentativa que sobrou</strong> (32 pontos acertando de primeira, 5 acertando na última), e cada palpite válido vale 1 ponto por pessoa, até 5. Se ninguém acertar em 10 tentativas, ficam só os pontos por palpite. Partida jogada por <strong>uma pessoa sozinha vale metade</strong>. Tudo soma no placar de jogos do <code>/rank</code>, junto com a forca e o xadrez, e o ranking só do jogo sai em <code>/rank letreco</code>. A partida sobrevive a reinícios do bot e é encerrada sem pontos depois de 6 horas parada.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/letreco</div><div class="out">🟩 sorteia a categoria e manda o tabuleiro vazio</div></div>
+                        <div class="ex"><div class="in">/letreco pais</div><div class="out">🟩 Letreco — País — tabuleiro com o espaço de cada palavra</div></div>
+                        <div class="ex"><div class="in">porta</div><div class="out">🟩 tabuleiro novo com as letras coloridas e o nome de quem jogou</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🎵 /musica</span>
+                <span class="desc">Baixa o áudio de um link e envia em mp3.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/musica link</code> — link do YouTube ou de outro site de vídeo.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Extrai só o áudio e manda como mp3 no grupo. Limite de <strong>10 minutos</strong> e 16 MB. O download passa por servidores intermediários, então pode levar um minuto ou mais; se nenhum deles responder, o bot avisa e basta tentar de novo.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/musica https://youtu.be/…</div><div class="out">🎵 o áudio em mp3, respondendo à sua mensagem</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🗞️ /noticias · /news</span>
+                <span class="desc">Principais notícias do dia.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/noticias</code> ou <code>/news</code>, sem parâmetros.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Retorna até <strong>5 manchetes principais</strong> do dia com os links.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/noticias</div><div class="out">🗞️ as 5 principais manchetes de hoje</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🔮 /oraculo</span>
+                <span class="desc">Sua previsão mística da semana.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/oraculo</code> (ou <code>/oráculo</code>), sem parâmetros.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>O oráculo consulta os astros (e uma IA) e entrega uma previsão personalizada. A previsão é <strong>uma por semana</strong>: consultas repetidas na mesma semana retornam a mesma profecia.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/oraculo</div><div class="out">🔮 sua previsão da semana, direto do plano astral</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🌍 /pais</span>
+                <span class="desc">Informações sobre um país.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/pais [nome do país]</code> — ex.: <code>/pais brasil</code>.</li>
+                        <li><code>/pais [bandeira]</code> — ex.: <code>/pais 🇧🇷</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Retorna a <strong>bandeira</strong>, o <strong>nome</strong> e a <strong>descrição</strong> do país. A busca por nome é parcial, então <code>/pais guin</code> já encontra um resultado; havendo vários, o bot prefere o de nome exato e, na falta dele, o primeiro em ordem alfabética. Por bandeira a busca é exata, pela sigla do país.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/pais brasil</div><div class="out">🇧🇷 Brasil 🇧🇷 + descrição do país</div></div>
+                        <div class="ex"><div class="in">/pais 🇵🇹</div><div class="out">🇵🇹 Portugal 🇵🇹 + descrição do país</div></div>
                     </div>
                 </div>
             </button>
@@ -497,6 +702,89 @@
                     <h3>Exemplos</h3>
                     <div class="examples">
                         <div class="ex"><div class="in">/pergunta vou ficar rico?</div><div class="out">🎱 imagem da bola 8 com a resposta do destino</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">😂 /piada</span>
+                <span class="desc">Uma piada aleatória do bot.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/piada</code>, sem parâmetros.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Sorteia uma piada do acervo do Diogenes. A qualidade não é garantida — o orçamento era meio sanduíche de presunto.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/piada</div><div class="out">😂 uma piada aleatória do acervo</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">🚫 /proibir<span class="badge-adm">ADMINS</span></span>
+                <span class="desc">Bloqueia uma imagem ou figurinha.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li>Responda a imagem ou figurinha com <code>/proibir</code>.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Disponível <strong>apenas para administradores</strong>. A mídia é apagada e sua assinatura fica bloqueada: se alguém enviar o mesmo conteúdo de novo, o bot remove automaticamente.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">(respondendo uma figurinha) /proibir</div><div class="out">apaga a figurinha e bloqueia reenvios</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">📊 /rank</span>
+                <span class="desc">Top 5 de mensagens e comandos — ou top 10 de uma categoria só.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/rank</code> — ranking geral.</li>
+                        <li><code>/rank diario</code>, <code>/rank semanal</code> ou <code>/rank mensal</code> — ranking do período.</li>
+                        <li><code>/rank fala</code>, <code>/rank uso</code> ou <code>/rank jogos</code> — só essa categoria, top 10.</li>
+                        <li>Categoria e período podem vir juntos, em qualquer ordem: <code>/rank fala semanal</code> é igual a <code>/rank semanal fala</code>.</li>
+                        <li><code>/rank xadrez</code> ou <code>/rank letreco</code> — ranking só daquele jogo, com vitórias, empates e derrotas.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>No ranking geral mostra três top 5: <strong>quem mais fala</strong> (mensagens), <strong>quem mais usa o bot</strong> (comandos) e o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
+                    <p>Pedindo uma categoria isolada (<code>fala</code>, <code>uso</code> ou <code>jogos</code>) o ranking mostra só ela, mas com o dobro de gente: <strong>top 10</strong> em vez de top 5.</p>
+                    <p><code>jogos</code> ainda não tem filtro de período — o placar de jogos é sempre geral, mesmo combinado com <code>diario</code>/<code>semanal</code>/<code>mensal</code>.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo + 🎮 placar de jogos</div></div>
+                        <div class="ex"><div class="in">/rank semanal</div><div class="out">📊 top 5 da semana</div></div>
+                        <div class="ex"><div class="in">/rank fala semanal</div><div class="out">🏆 top 10 de quem mais fala nesta semana</div></div>
+                        <div class="ex"><div class="in">/rank semanal fala</div><div class="out">🏆 mesmo resultado do exemplo acima</div></div>
+                        <div class="ex"><div class="in">/rank jogos</div><div class="out">🎮 top 10 do placar de jogos</div></div>
+                        <div class="ex"><div class="in">/rank xadrez</div><div class="out">♟️ top 5 do xadrez — 75 pontos (2V 1E 1D)</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
+                <span class="name">ℹ️ /sobre</span>
+                <span class="desc">Sobre o bot e quem desenvolveu.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/sobre</code>, sem parâmetros.</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Mostra o resumo do projeto: quem criou, como reportar falhas, contatos e a versão atual — o mesmo conteúdo da seção <strong>Sobre</strong> desta página.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/sobre</div><div class="out">🤖 história, contatos e versão do bot</div></div>
                     </div>
                 </div>
             </button>
@@ -538,186 +826,19 @@
             </button>
 
             <button class="cmd" type="button">
-                <span class="name">📊 /rank</span>
-                <span class="desc">Top 5 de mensagens e comandos — ou top 10 de uma categoria só.</span>
+                <span class="name">🎥 /video</span>
+                <span class="desc">Baixa um vídeo curto de um link e envia no grupo.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
                     <ul>
-                        <li><code>/rank</code> — ranking geral.</li>
-                        <li><code>/rank diario</code>, <code>/rank semanal</code> ou <code>/rank mensal</code> — ranking do período.</li>
-                        <li><code>/rank fala</code>, <code>/rank uso</code> ou <code>/rank jogos</code> — só essa categoria, top 10.</li>
-                        <li>Categoria e período podem vir juntos, em qualquer ordem: <code>/rank fala semanal</code> é igual a <code>/rank semanal fala</code>.</li>
-                        <li><code>/rank xadrez</code> ou <code>/rank letreco</code> — ranking só daquele jogo, com vitórias, empates e derrotas.</li>
+                        <li><code>/video link</code> — link do YouTube ou de outro site de vídeo.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>No ranking geral mostra três top 5: <strong>quem mais fala</strong> (mensagens), <strong>quem mais usa o bot</strong> (comandos) e o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
-                    <p>Pedindo uma categoria isolada (<code>fala</code>, <code>uso</code> ou <code>jogos</code>) o ranking mostra só ela, mas com o dobro de gente: <strong>top 10</strong> em vez de top 5.</p>
-                    <p><code>jogos</code> ainda não tem filtro de período — o placar de jogos é sempre geral, mesmo combinado com <code>diario</code>/<code>semanal</code>/<code>mensal</code>.</p>
+                    <p>Manda o vídeo em mp4 direto no grupo. Limite de <strong>5 minutos</strong> e 16 MB — vídeos mais longos chegam em resolução menor para caber. Vídeos privados, removidos ou ao vivo não são baixados. O download pode levar um minuto ou mais.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/rank</div><div class="out">📊 top 5 gerais do grupo + 🎮 placar de jogos</div></div>
-                        <div class="ex"><div class="in">/rank semanal</div><div class="out">📊 top 5 da semana</div></div>
-                        <div class="ex"><div class="in">/rank fala semanal</div><div class="out">🏆 top 10 de quem mais fala nesta semana</div></div>
-                        <div class="ex"><div class="in">/rank semanal fala</div><div class="out">🏆 mesmo resultado do exemplo acima</div></div>
-                        <div class="ex"><div class="in">/rank jogos</div><div class="out">🎮 top 10 do placar de jogos</div></div>
-                        <div class="ex"><div class="in">/rank xadrez</div><div class="out">♟️ top 5 do xadrez — 75 pontos (2V 1E 1D)</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">🗞️ /noticias · /news</span>
-                <span class="desc">Principais notícias do dia.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/noticias</code> ou <code>/news</code>, sem parâmetros.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Retorna até <strong>5 manchetes principais</strong> do dia com os links.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/noticias</div><div class="out">🗞️ as 5 principais manchetes de hoje</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">💱 /cotacao</span>
-                <span class="desc">Cotações de moedas em BRL.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/cotacao</code> — retorna todas as cotações.</li>
-                        <li><code>/cotacao [moeda]</code> — retorna só a moeda escolhida.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Moedas aceitas: <strong>dollar</strong>, <strong>dollar canadense</strong>, <strong>yen</strong>, <strong>euro</strong>, <strong>libra</strong>, <strong>yuan</strong> (ou renminbi) e <strong>bitcoin</strong> — sempre em relação ao real (BRL). O comando tem um <strong>intervalo mínimo entre usos</strong> no grupo; se alguém usou há pouco, o bot pede para aguardar.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/cotacao</div><div class="out">💱 todas as moedas + bitcoin em BRL</div></div>
-                        <div class="ex"><div class="in">/cotacao euro</div><div class="out">💱 só a cotação do euro</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">🕵️ /check</span>
-                <span class="desc">Estatísticas de um usuário.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/check @usuario</code> — mencione quem quer investigar.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Mostra as estatísticas do usuário: <strong>mensagens</strong> (hoje, semana, mês e geral), <strong>imagens removidas</strong> pela moderação e <strong>uso de comandos</strong>.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/check @fulano</div><div class="out">🕵️ dossiê completo de atividade do fulano</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">📖 /definir</span>
-                <span class="desc">Busca a definição de uma palavra.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/definir [palavra]</code> — ex.: <code>/definir casa</code>.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Procura a palavra no dicionário do bot e retorna os significados cadastrados como <strong>substantivo</strong>, <strong>verbo</strong>, <strong>adjetivo</strong> e <strong>advérbio</strong> (só aparecem os que existirem para a palavra).</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/definir casa</div><div class="out">📖 definição de "casa"</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">📚 /books · /livros</span>
-                <span class="desc">Biblioteca virtual e recomendações.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/books</code> ou <code>/livros</code>, sem parâmetros.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Exibe os <strong>links ativos da biblioteca virtual</strong>, o <strong>top de livros</strong> da última segunda-feira e a <strong>recomendação mais recente do Dio</strong>.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/livros</div><div class="out">📚 links da biblioteca + top + recomendação do Dio</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">🎬 /filme</span>
-                <span class="desc">Busca filmes no TheMovieDB.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/filme [nome do filme]</code> — ex.: <code>/filme matrix</code>.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Busca o filme no <strong>TheMovieDB</strong> e retorna até <strong>3 resultados</strong>, cada um com a <strong>capa</strong>, o <strong>ano de lançamento</strong>, o <strong>título original</strong> e a <strong>sinopse</strong>.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/filme matrix</div><div class="out">🎬 até 3 filmes com capa, título original e sinopse</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">🌍 /pais</span>
-                <span class="desc">Informações sobre um país.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/pais [nome do país]</code> — ex.: <code>/pais brasil</code>.</li>
-                        <li><code>/pais [bandeira]</code> — ex.: <code>/pais 🇧🇷</code>.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Retorna a <strong>bandeira</strong>, o <strong>nome</strong> e a <strong>descrição</strong> do país. A busca por nome é parcial, então <code>/pais guin</code> já encontra um resultado; havendo vários, o bot prefere o de nome exato e, na falta dele, o primeiro em ordem alfabética. Por bandeira a busca é exata, pela sigla do país.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/pais brasil</div><div class="out">🇧🇷 Brasil 🇧🇷 + descrição do país</div></div>
-                        <div class="ex"><div class="in">/pais 🇵🇹</div><div class="out">🇵🇹 Portugal 🇵🇹 + descrição do país</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">🎯 /forca</span>
-                <span class="desc">Jogo da forca em grupo: palavras, filmes ou países.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/forca</code> — <strong>sorteia um dos modos abaixo</strong> e inicia a partida.</li>
-                        <li><code>/forca dicionario</code> — qualquer palavra do dicionário do bot.</li>
-                        <li><code>/forca filmes</code> — um filme da base do bot.</li>
-                        <li><code>/forca pais</code> — um país.</li>
-                        <li><code>/forca substantivo</code> · <code>verbo</code> · <code>adjetivo</code> · <code>advérbio</code> — uma palavra daquela classe gramatical.</li>
-                    </ul>
-                    <p>Os modos funcionam no singular ou no plural (<code>/forca pais</code> ou <code>/forca paises</code>, <code>/forca verbo</code> ou <code>/forca verbos</code>), e o acento é opcional. Um modo desconhecido não inicia partida: o bot responde com a lista de opções válidas.</p>
-                    <h3>Detalhes</h3>
-                    <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
-                    <p>Nos modos <strong>países</strong> e <strong>filmes</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, ou a bandeira e a descrição do país.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 7 modos e inicia a partida</div></div>
-                        <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
-                        <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
+                        <div class="ex"><div class="in">/video https://youtu.be/…</div><div class="out">🎥 o vídeo em mp4, respondendo à sua mensagem</div></div>
                     </div>
                 </div>
             </button>
@@ -748,75 +869,12 @@
                 </div>
             </button>
 
-            <button class="cmd" type="button">
-                <span class="name">🟩 /letreco</span>
-                <span class="desc">Letreco (estilo Wordle) em grupo, com tabuleiro em imagem.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/letreco</code> — <strong>sorteia a categoria</strong> e inicia a partida.</li>
-                        <li><code>/letreco dicionario</code> — uma palavra do dicionário, de 5 a 8 letras.</li>
-                        <li><code>/letreco filme</code> — um filme da base do bot.</li>
-                        <li><code>/letreco pais</code> — um país.</li>
-                        <li>Responder a imagem com o palpite — <code>PORTA</code>, <code>porta</code> ou <code>pórta</code> dão no mesmo.</li>
-                        <li><code>/letreco encerrar</code> — encerra a partida (quem começou ou um administrador do grupo).</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Apenas uma partida por grupo por vez, e o palpite só vale como <strong>resposta à imagem mais recente</strong> do tabuleiro — responder a um tabuleiro antigo não consome tentativa. São <strong>10 tentativas</strong> no total, compartilhadas pelo grupo: cada palpite pinta as letras de <strong>verde</strong> (letra certa no lugar certo), <strong>amarelo</strong> (letra certa no lugar errado) ou <strong>vermelho</strong> (letra que não existe). Letras repetidas só ficam coloridas na quantidade em que aparecem na resposta.</p>
-                    <p>Depois de jogar, a vez passa para outra pessoa: quem acabou de jogar só pode jogar de novo <strong>1 minuto</strong> depois, ou assim que outra pessoa jogar. Palpites com número de letras diferente da resposta não consomem tentativa nem mudam a vez. Espaços e acentos não entram na contagem, e nas categorias de filme e país o tabuleiro mostra a separação entre as palavras — o que revela o tamanho de cada uma, mas nenhuma letra.</p>
-                    <p>Quem acerta ganha <strong>5 pontos mais 3 por tentativa que sobrou</strong> (32 pontos acertando de primeira, 5 acertando na última), e cada palpite válido vale 1 ponto por pessoa, até 5. Se ninguém acertar em 10 tentativas, ficam só os pontos por palpite. Partida jogada por <strong>uma pessoa sozinha vale metade</strong>. Tudo soma no placar de jogos do <code>/rank</code>, junto com a forca e o xadrez, e o ranking só do jogo sai em <code>/rank letreco</code>. A partida sobrevive a reinícios do bot e é encerrada sem pontos depois de 6 horas parada.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/letreco</div><div class="out">🟩 sorteia a categoria e manda o tabuleiro vazio</div></div>
-                        <div class="ex"><div class="in">/letreco pais</div><div class="out">🟩 Letreco — País — tabuleiro com o espaço de cada palavra</div></div>
-                        <div class="ex"><div class="in">porta</div><div class="out">🟩 tabuleiro novo com as letras coloridas e o nome de quem jogou</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">ℹ️ /sobre</span>
-                <span class="desc">Sobre o bot e quem desenvolveu.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/sobre</code>, sem parâmetros.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Mostra o resumo do projeto: quem criou, como reportar falhas, contatos e a versão atual — o mesmo conteúdo da seção <strong>Sobre</strong> desta página.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/sobre</div><div class="out">🤖 história, contatos e versão do bot</div></div>
-                    </div>
-                </div>
-            </button>
-
-            <button class="cmd" type="button">
-                <span class="name">❓ /ajuda · /help</span>
-                <span class="desc">Lista de comandos disponíveis.</span>
-                <span class="more">[ + detalhes ]</span>
-                <div class="cmd-details" hidden>
-                    <h3>Uso</h3>
-                    <ul>
-                        <li><code>/ajuda</code> ou <code>/help</code>, sem parâmetros.</li>
-                    </ul>
-                    <h3>Detalhes</h3>
-                    <p>Exibe no grupo a lista de todos os comandos com uma descrição curta de cada um.</p>
-                    <h3>Exemplos</h3>
-                    <div class="examples">
-                        <div class="ex"><div class="in">/ajuda</div><div class="out">📖 lista completa de comandos no chat</div></div>
-                    </div>
-                </div>
-            </button>
-
         </div>
     </section>
 
     <footer>
         <a class="admin-link" href="/admin">[ acesso administrativo ]</a>
-        <p>diogenes v3.1.0 — rodando num pc do milhão</p>
+        <p>diogenes<?= !empty($currentVersion) ? ' v' . htmlspecialchars($currentVersion, ENT_QUOTES, 'UTF-8') : '' ?> — rodando num pc do milhão</p>
     </footer>
 </main>
 

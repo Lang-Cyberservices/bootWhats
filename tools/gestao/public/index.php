@@ -21,6 +21,7 @@ use Gestao\Repositories\CountryRepository;
 use Gestao\Repositories\ErrorLogRepository;
 use Gestao\Repositories\JokeRepository;
 use Gestao\Repositories\ProxyRepository;
+use Gestao\Repositories\VersionRepository;
 use Gestao\Repositories\WelcomeConfigRepository;
 
 require __DIR__ . '/../src/Config.php';
@@ -34,6 +35,7 @@ require __DIR__ . '/../src/Repositories/CountryRepository.php';
 require __DIR__ . '/../src/Repositories/ErrorLogRepository.php';
 require __DIR__ . '/../src/Repositories/JokeRepository.php';
 require __DIR__ . '/../src/Repositories/ProxyRepository.php';
+require __DIR__ . '/../src/Repositories/VersionRepository.php';
 require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
@@ -90,6 +92,7 @@ if (!in_array($route, $publicRoutes, true)) {
 
 switch ($route) {
     case 'home':
+        $currentVersion = (new VersionRepository($db->pdo()))->latest();
         require __DIR__ . '/../src/Views/home.php';
         break;
     case 'admin':
