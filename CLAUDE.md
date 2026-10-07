@@ -33,6 +33,11 @@ node tools/validate_evidence_md5.js /path/to/image.webp
 # print confusion matrix and threshold sweep. NSFWJS only — no LAION. Read-only.
 node tools/nsfw_eval.js storage/eval --models=inception_v3,mobilenet_v2_mid --limiar=0,95
 
+# Populate `animals` from the Wikipedia lists of Brazilian fauna (idempotent; re-running only
+# fills in descriptions/images that failed). --dry-run parses the lists and touches nothing.
+node tools/import_animals.js --dry-run
+node tools/import_animals.js --log=/tmp/animals.log
+
 # Chess board renderer + rules check (no WhatsApp, no DB)
 node tools/xadrez_preview.js "e4 e5 Nf3 Nc6 Bb5" /tmp/board.png
 node tools/xadrez_preview.js --rules
@@ -159,6 +164,15 @@ round message** (matched against `roundMessageIds`) rather than as a command. No
 reach them from the `if (!isCommand)` block in `index.js`. Aggregate points for every game live in
 `game_scores`, keyed by `gameType` (`forca`, `xadrez`, `letreco`) — the 🎮 section of `/rank` groups
 by `authorId` without filtering `gameType`, so a new game shows up there for free.
+
+`/forca` and `/letreco` share their answer banks (`dictionary`, `movies`, `countries`, `animals`) and
+the end-of-game reveal in `games/answerInfo.js`. The `fauna` category draws from `animals`, which is
+filled by `tools/import_animals.js` and nothing else — an empty table just means the category
+answers "não encontrei". `animals.img_url` is the Commons *original* (can be tens of MB, or SVG), so
+`buildAnimalMessage` never sends it as is: it asks `Special:FilePath/<file>?width=800` for a
+thumbnail, with its own `User-Agent` because Wikimedia rejects requests without one (which rules out
+`MessageMedia.fromUrl`). A whole-answer guess in `/forca` treats hyphens as spaces, so "tatu bola"
+matches `tatu-bola`.
 
 `/letreco` is the strictest use of that pattern: a guess only counts as a reply to
 `currentRoundMessageId`, and a reply to an older board is answered with "tabuleiro desatualizado"

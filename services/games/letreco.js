@@ -2,7 +2,7 @@ const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('../database');
 const { getSenderId } = require('../messageUtils');
 const { renderBoard } = require('./letrecoBoard');
-const { buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
+const { buildAnimalMessage, buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
 const {
     normalizeText,
     extractLetters,
@@ -35,18 +35,39 @@ const GUESS_MAX_WORDS = 3;
 const GUESS_MAX_CHARS = 100;
 const PICK_ATTEMPTS = 20;
 
-const CATEGORIES = ['dicionario', 'filme', 'pais'];
+const CATEGORIES = ['dicionario', 'filme', 'pais', 'fauna'];
 
 const CATEGORY_ALIASES = {
     dicionario: 'dicionario', dicionarios: 'dicionario', palavra: 'dicionario', palavras: 'dicionario',
     filme: 'filme', filmes: 'filme',
-    pais: 'pais', paises: 'pais'
+    pais: 'pais', paises: 'pais',
+    fauna: 'fauna', animal: 'fauna', animais: 'fauna', bicho: 'fauna', bichos: 'fauna'
+};
+
+// Categorias sorteadas de uma tabela de nomes: como contar, buscar e o que guardar em answerRef.
+const BANKS = {
+    filme: {
+        where: { themoviedbId: { not: null } },
+        model: () => prisma.movie,
+        ref: (row) => (row.themoviedbId ? String(row.themoviedbId) : null)
+    },
+    pais: {
+        where: {},
+        model: () => prisma.country,
+        ref: (row) => row.sigla || null
+    },
+    fauna: {
+        where: {},
+        model: () => prisma.animal,
+        ref: (row) => String(row.id)
+    }
 };
 
 const CATEGORY_TITLES = {
     dicionario: '🟩 *Letreco — Dicionário*',
     filme: '🟩 *Letreco — Filme*',
-    pais: '🟩 *Letreco — País*'
+    pais: '🟩 *Letreco — País*',
+    fauna: '🟩 *Letreco — Fauna*'
 };
 
 const USAGE_MESSAGE =
@@ -56,6 +77,7 @@ const USAGE_MESSAGE =
     '• /letreco dicionario\n' +
     '• /letreco filme\n' +
     '• /letreco pais\n' +
+    '• /letreco fauna\n' +
     '• /letreco encerrar — encerra a partida atual';
 
 const END_WORDS = new Set(['encerrar', 'encerra', 'parar', 'cancelar', 'desistir', 'fim']);
@@ -276,8 +298,7 @@ class LetrecoGame {
     // --- Sorteio da resposta -------------------------------------------------
 
     async pickAnswer(category) {
-        if (category === 'filme') return this.pickFromBank('filme');
-        if (category === 'pais') return this.pickFromBank('pais');
+        if (BANKS[category]) return this.pickFromBank(category);
         return this.pickDictionaryAnswer();
     }
 
@@ -312,19 +333,15 @@ class LetrecoGame {
     }
 
     async pickFromBank(category) {
-        const isMovie = category === 'filme';
-        const where = isMovie ? { themoviedbId: { not: null } } : {};
+        const bank = BANKS[category];
+        const model = bank.model();
 
-        const total = isMovie
-            ? await prisma.movie.count({ where })
-            : await prisma.country.count();
+        const total = await model.count({ where: bank.where });
         if (!total) return null;
 
         for (let attempt = 0; attempt < PICK_ATTEMPTS; attempt++) {
             const skip = Math.floor(Math.random() * total);
-            const [row] = isMovie
-                ? await prisma.movie.findMany({ where, skip, take: 1 })
-                : await prisma.country.findMany({ skip, take: 1 });
+            const [row] = await model.findMany({ where: bank.where, skip, take: 1 });
 
             const candidate = this.toEntry(row?.name);
             if (!candidate) continue;
@@ -332,9 +349,7 @@ class LetrecoGame {
             if (candidate.letters.length < DICT_MIN_LETTERS) continue;
             if (candidate.letters.length > BANK_MAX_LETTERS) continue;
 
-            candidate.ref = isMovie
-                ? (row.themoviedbId ? String(row.themoviedbId) : null)
-                : (row.sigla || null);
+            candidate.ref = bank.ref(row);
             return candidate;
         }
 
@@ -595,6 +610,16 @@ class LetrecoGame {
             if (game.category === 'pais') {
                 const text = await buildCountryInfo(game.answer, game.answerRef);
                 await chat.sendMessage(text);
+                return;
+            }
+
+            if (game.category === 'fauna') {
+                const { caption, media } = await buildAnimalMessage(game.answerRef, game.answer);
+                if (media) {
+                    await chat.sendMessage(media, { caption });
+                } else {
+                    await chat.sendMessage(caption);
+                }
                 return;
             }
 

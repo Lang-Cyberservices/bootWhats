@@ -541,7 +541,7 @@
 
             <button class="cmd" type="button">
                 <span class="name">🎯 /forca</span>
-                <span class="desc">Jogo da forca em grupo: palavras, filmes ou países.</span>
+                <span class="desc">Jogo da forca em grupo: palavras, filmes, países ou animais.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
@@ -550,15 +550,16 @@
                         <li><code>/forca dicionario</code> — qualquer palavra do dicionário do bot.</li>
                         <li><code>/forca filmes</code> — um filme da base do bot.</li>
                         <li><code>/forca pais</code> — um país.</li>
+                        <li><code>/forca fauna</code> — um animal da fauna brasileira.</li>
                         <li><code>/forca substantivo</code> · <code>verbo</code> · <code>adjetivo</code> · <code>advérbio</code> — uma palavra daquela classe gramatical.</li>
                     </ul>
                     <p>Os modos funcionam no singular ou no plural (<code>/forca pais</code> ou <code>/forca paises</code>, <code>/forca verbo</code> ou <code>/forca verbos</code>), e o acento é opcional. Um modo desconhecido não inicia partida: o bot responde com a lista de opções válidas.</p>
                     <h3>Detalhes</h3>
                     <p>Apenas uma partida por grupo por vez. Qualquer participante pode responder a imagem da rodada com <strong>uma letra</strong> ou um <strong>chute da resposta inteira</strong>. Acertar uma letra dá pontos e revela suas ocorrências; quem manda uma letra não pode mandar outra consecutiva até alguém mais jogar. Um chute errado zera os pontos do jogador naquela partida e o elimina; a forca completa (7 erros) encerra o jogo e descarta os pontos de todos. A pontuação de quem vence entra no ranking do <code>/rank</code>, e a partida sobrevive a reinícios do bot.</p>
-                    <p>Nos modos <strong>países</strong> e <strong>filmes</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, ou a bandeira e a descrição do país.</p>
+                    <p>Nos modos <strong>países</strong>, <strong>filmes</strong> e <strong>fauna</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas, e no chute da resposta inteira o hífen pode ser digitado como espaço. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, a bandeira e a descrição do país, ou a foto e a descrição do animal.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 7 modos e inicia a partida</div></div>
+                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 8 modos e inicia a partida</div></div>
                         <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
                         <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
                     </div>
@@ -597,6 +598,7 @@
                         <li><code>/letreco dicionario</code> — uma palavra do dicionário, de 5 a 8 letras.</li>
                         <li><code>/letreco filme</code> — um filme da base do bot.</li>
                         <li><code>/letreco pais</code> — um país.</li>
+                        <li><code>/letreco fauna</code> — um animal da fauna brasileira.</li>
                         <li>Responder a imagem com o palpite — <code>PORTA</code>, <code>porta</code> ou <code>pórta</code> dão no mesmo.</li>
                         <li><code>/letreco encerrar</code> — encerra a partida (quem começou ou um administrador do grupo).</li>
                     </ul>

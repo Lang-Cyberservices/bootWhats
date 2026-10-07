@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { prisma } = require('../database');
 const { getSenderId } = require('../messageUtils');
-const { buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
+const { buildAnimalMessage, buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
 
 const MAX_ERRORS = 7;
 const DICTIONARY_MIN_LENGTH = 4;
@@ -23,6 +23,7 @@ const END_WORDS = new Set(['encerrar', 'encerra', 'parar', 'cancelar', 'desistir
 const MODE_ALIASES = {
     filme: 'filmes', filmes: 'filmes',
     pais: 'paises', paises: 'paises',
+    fauna: 'fauna', animal: 'fauna', animais: 'fauna', bicho: 'fauna', bichos: 'fauna',
     dicionario: 'dicionario', dicionarios: 'dicionario',
     substantivo: 'substantivo', substantivos: 'substantivo',
     verbo: 'verbo', verbos: 'verbo',
@@ -39,11 +40,12 @@ const DICTIONARY_MEANING_FIELD = {
 };
 
 // Sorteados quando o /forca vem sem argumento.
-const RANDOM_MODES = ['filmes', 'paises', 'dicionario', 'substantivo', 'verbo', 'adjetivo', 'adverbio'];
+const RANDOM_MODES = ['filmes', 'paises', 'fauna', 'dicionario', 'substantivo', 'verbo', 'adjetivo', 'adverbio'];
 
 const MODE_TITLES = {
     filmes: '🎬 Jogo da Forca (Filmes)',
     paises: '🌍 Jogo da Forca (Países)',
+    fauna: '🐾 Jogo da Forca (Fauna)',
     dicionario: '📖 Jogo da Forca (Dicionário)',
     substantivo: '📖 Jogo da Forca (Substantivo)',
     verbo: '📖 Jogo da Forca (Verbo)',
@@ -54,6 +56,7 @@ const MODE_TITLES = {
 const MODE_LABELS = {
     filmes: 'filmes',
     paises: 'países',
+    fauna: 'animais',
     dicionario: 'dicionário',
     substantivo: 'substantivos',
     verbo: 'verbos',
@@ -67,6 +70,10 @@ function normalize(value) {
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase()
         .trim();
+}
+
+function normalizeWholeGuess(value) {
+    return normalize(value).replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseJsonArray(value) {
@@ -193,6 +200,7 @@ class ForcaGame {
                 'Use */forca* sozinho para sortear um modo, ou escolha:\n' +
                 '• /forca filmes\n' +
                 '• /forca pais\n' +
+                '• /forca fauna\n' +
                 '• /forca dicionario\n' +
                 '• /forca substantivo\n' +
                 '• /forca verbo\n' +
@@ -222,6 +230,14 @@ class ForcaGame {
             }
             answer = country.name;
             answerRef = country.sigla;
+        } else if (mode === 'fauna') {
+            const animal = await this.pickRandomAnimal();
+            if (!animal) {
+                await msg.reply('❌ Não encontrei animais disponíveis para jogar agora.');
+                return;
+            }
+            answer = animal.name;
+            answerRef = String(animal.id);
         } else {
             const entry = await this.pickRandomDictionaryEntry(mode);
             if (!entry) {
@@ -355,6 +371,15 @@ class ForcaGame {
         return country || null;
     }
 
+    async pickRandomAnimal() {
+        const total = await prisma.animal.count();
+        if (!total) return null;
+
+        const skip = Math.floor(Math.random() * total);
+        const [animal] = await prisma.animal.findMany({ skip, take: 1 });
+        return animal || null;
+    }
+
     // --- Palpites ------------------------------------------------------------
 
     async handleMessage(msg, chat) {
@@ -469,8 +494,9 @@ class ForcaGame {
     }
 
     async processWordGuess(chat, game, authorId, participant, guessRaw) {
-        const normalizedGuess = normalize(guessRaw);
-        const normalizedAnswer = normalize(game.answer);
+        // Hífen conta como espaço: "tatu bola" acerta "tatu-bola".
+        const normalizedGuess = normalizeWholeGuess(guessRaw);
+        const normalizedAnswer = normalizeWholeGuess(game.answer);
 
         if (normalizedGuess === normalizedAnswer) {
             const hiddenDistinct = [...game.answerLetterSet].filter((l) => !game.guessedLetters.has(l)).length;
@@ -539,6 +565,7 @@ class ForcaGame {
         let guessHint = '• um chute da palavra inteira.';
         if (game.mode === 'filmes') guessHint = '• o nome completo do filme.';
         if (game.mode === 'paises') guessHint = '• o nome completo do país.';
+        if (game.mode === 'fauna') guessHint = '• o nome completo do animal.';
         lines.push(
             '', 'Todos podem jogar. Responda ESTA imagem com:', '• uma letra', 'ou', guessHint,
             '', 'Depois de jogar uma letra, outra pessoa tem prioridade por 60 segundos.'
@@ -651,6 +678,16 @@ class ForcaGame {
             if (game.mode === 'paises') {
                 const text = await buildCountryInfo(game.answer, game.answerRef);
                 await chat.sendMessage(text);
+                return;
+            }
+
+            if (game.mode === 'fauna') {
+                const { caption, media } = await buildAnimalMessage(game.answerRef, game.answer);
+                if (media) {
+                    await chat.sendMessage(media, { caption });
+                } else {
+                    await chat.sendMessage(caption);
+                }
                 return;
             }
 

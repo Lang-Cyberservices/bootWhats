@@ -439,3 +439,15 @@ model Proxy {
   @@index([active, fails])
   @@map("proxies")
 }
+
+// Animais brasileiros coletados das listas da Wikipédia por tools/import_animals.js.
+// `name` usa utf8mb4_bin (ver a migration): "sabiá" e "sabia" são nomes diferentes.
+model Animal {
+  id             Int     @id @default(autoincrement())
+  name           String  @unique @db.VarChar(191)
+  scientificName String  @map("scientific_name") @db.VarChar(191)
+  description    String? @db.Text
+  imgUrl         String? @map("img_url") @db.VarChar(1024)
+
+  @@map("animals")
+}

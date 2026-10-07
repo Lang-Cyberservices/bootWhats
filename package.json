@@ -29,6 +29,7 @@
     "whatsapp-web.js": "github:lindionez/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
   },
   "devDependencies": {
+    "cheerio": "^1.2.0",
     "prisma": "^7.4.2"
   }
 }
