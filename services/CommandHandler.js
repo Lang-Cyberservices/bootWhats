@@ -23,6 +23,20 @@ const MAX_COMMANDS_PER_MINUTE = (() => {
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_COMMANDS_PER_MINUTE;
 })();
 const commandHistoryByUser = new Map(); // key: authorId, value: number[]
+// Números fora do limite diário do /dio, em dígitos. Celular BR de 13 dígitos
+// entra também sem o nono dígito: o WhatsApp ainda reporta contas antigas assim.
+const DIO_UNLIMITED_NUMBERS = (() => {
+    const numbers = new Set();
+    for (const raw of String(process.env.DIO_UNLIMITED_NUMBERS || '').split(',')) {
+        const digits = raw.replace(/\D/g, '');
+        if (!digits) continue;
+        numbers.add(digits);
+        if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') {
+            numbers.add(digits.slice(0, 4) + digits.slice(5));
+        }
+    }
+    return numbers;
+})();
 const NEWS_COOLDOWN_MS = 14 * 60_000;
 const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
 let lastCotacaoRequestAt = 0;
@@ -1546,6 +1560,14 @@ class CommandHandler {
         if (!this.dioService) {
             await msg.reply('❌ O barril do Diógenes está fechado por hoje.');
             return;
+        }
+
+        if (DIO_UNLIMITED_NUMBERS.size) {
+            const identities = await this.collectAuthorIdentities(msg);
+            if ([...identities].some((id) => DIO_UNLIMITED_NUMBERS.has(id))) {
+                await this.dioService.reply(msg, chat, question);
+                return;
+            }
         }
 
         const authorId = getSenderId(msg);

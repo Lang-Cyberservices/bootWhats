@@ -312,6 +312,9 @@ See `.env_example` for all options. Critical ones:
 - `DEV_GROUP_ID` / `APP_ENV` — dev isolation
 - `NSFW_EVIDENCE_DIR` — where deleted media evidence is saved (default `./storage/deleted-media`)
 - `MAX_COMMANDS_PER_MINUTE` — per-user rate limit (default 3 per 2-minute window)
+- `DIO_UNLIMITED_NUMBERS` — comma-separated phone numbers (with country code) exempt from `/dio`'s
+  3-per-day limit; matched against every identity `collectAuthorIdentities` finds (phone and LID).
+  The general `MAX_COMMANDS_PER_MINUTE` limit still applies to them
 - `LETRECO_COOLDOWN_MS` / `LETRECO_TIMEOUT_MS` — same-player wait (default 60 s) and idle expiry of a
   letreco match (default 6 h); both exist so the rules can be exercised without waiting
 - `FOLHAS_GROUP_ID` / `FOLHAS_DB_NAME` / `FOLHAS_DEFAULT_PASSWORD` — `/folhas` sync target group,
