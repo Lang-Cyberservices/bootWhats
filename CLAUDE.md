@@ -249,7 +249,12 @@ try/catch used to crash the process with nothing beyond raw pm2 stderr), and the
 behind `/oraculo`, `/filme`, `/news`, `/livros` (Gemini, TMDB, GNews, publishnews.com.br scrape) —
 those are the commands most exposed to third-party outages, so their fetch/HTTP-status failures are
 persisted with `context` values like `command./filme` in addition to their existing user-facing
-"tente novamente" replies. Both global handlers persist then `process.exit(1)`; pm2's `autorestart`
+"tente novamente" replies. `/livros` is the exception to the "tente novamente": a failed ranking
+scrape (publishnews.com.br sits behind a Cloudflare challenge that answers 403 to non-browsers) only
+replaces the ranking section with "Ranking indisponível" — the download links and the recommendation
+come from the DB and are still sent. For now the scrape is switched off entirely
+(`BOOKS_RANKING_ENABLED = false` in `CommandHandler.js`), so `/livros` always answers that way until
+`fetchWeeklyBooksFromPublishNews` points at a source that allows it. Both global handlers persist then `process.exit(1)`; pm2's `autorestart`
 brings the process back up. The `tools/gestao` admin panel reads this table as its post-login
 landing page (`?route=errors`, see `AuthController::login()` and the `default:` case in
 `public/index.php`) — rows can be marked `resolved` from there, and the screen shows only unresolved

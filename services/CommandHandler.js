@@ -37,6 +37,9 @@ const DIO_UNLIMITED_NUMBERS = (() => {
     }
     return numbers;
 })();
+// Ranking do /livros desligado: o publishnews.com.br passou a responder 403 (desafio da
+// Cloudflare). Religar quando fetchWeeklyBooksFromPublishNews apontar para outra fonte.
+const BOOKS_RANKING_ENABLED = false;
 const NEWS_COOLDOWN_MS = 14 * 60_000;
 const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
 let lastCotacaoRequestAt = 0;
@@ -1355,7 +1358,19 @@ class CommandHandler {
 
         try {
             const lastMonday = this.getLastMondayDate();
-            const weeklyBooks = await this.ensureWeeklyBooks(lastMonday);
+
+            // O ranking vem de scrape externo; se falhar, o resto (que vem do banco) ainda vai.
+            let weeklyBooks = [];
+            let rankingFailed = !BOOKS_RANKING_ENABLED;
+            if (BOOKS_RANKING_ENABLED) {
+                try {
+                    weeklyBooks = await this.ensureWeeklyBooks(lastMonday);
+                } catch (err) {
+                    rankingFailed = true;
+                    console.error('Erro ao buscar ranking do /books:', err?.message || err);
+                    this.errorLogger?.logError(err, { process: 'bot', context: 'command./livros' });
+                }
+            }
 
             const [downloads, recomendation] = await Promise.all([
                 prisma.booksDownload.findMany({
@@ -1381,7 +1396,9 @@ class CommandHandler {
             }
 
             lines.push('', '🏆 *Top livros da semana*');
-            if (weeklyBooks.length > 0) {
+            if (rankingFailed) {
+                lines.push('- Ranking indisponível no momento.');
+            } else if (weeklyBooks.length > 0) {
                 lines.push(...weeklyBooks.map((item, index) => `${index + 1}. ${this.normalizeText(item.book)}`));
             } else {
                 lines.push('- Nenhum livro encontrado para a semana.');
