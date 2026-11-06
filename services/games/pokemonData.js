@@ -2,7 +2,8 @@
 //
 // A primeira vez que um id é sorteado ele vem da PokeAPI e fica no banco; dali em diante sai só
 // do banco. A descrição (flavor text) é guardada em pt-BR: da própria PokeAPI quando existe, senão
-// traduzida pela Google Cloud Translation (NMT) com a mesma chave do Gemini. Se a tradução falhar a
+// traduzida pela Google Cloud Translation (NMT) com `TRANSLATE_API_KEY` — chave própria, porque o Google
+// não deixa a chave do Gemini (restrita à Generative Language API) chamar a Translation. Se a tradução falhar a
 // linha é gravada assim mesmo, com `description = null`, e só a tradução é refeita no próximo sorteio.
 //
 // `fetchFromPokeApi`, `normalizeName`, `maskName` e `nameLetters` não tocam o Prisma, então dá para
@@ -99,8 +100,8 @@ async function resolveImageUrl(id) {
 
 // Lança em qualquer falha: sem a chave ou com a API bloqueada, quem chama decide o fallback.
 async function translateToPtBr(texts) {
-    const key = (process.env.GEMINI_API_KEY || '').trim();
-    if (!key) throw new Error('GEMINI_API_KEY ausente: tradução indisponível');
+    const key = (process.env.TRANSLATE_API_KEY || '').trim();
+    if (!key) throw new Error('TRANSLATE_API_KEY ausente: tradução indisponível');
 
     const json = await fetchJson(`${TRANSLATE_ENDPOINT}?key=${encodeURIComponent(key)}`, {
         method: 'POST',
@@ -163,6 +164,13 @@ async function fillTranslation(row, { translateGenus = true } = {}) {
     return data;
 }
 
+// Falha de tradução não interrompe o jogo (cai no texto em inglês), mas não pode sumir: vai para o
+// console sempre e para `error_logs` quando quem chama passa o errorLogger.
+function reportTranslationError(err, id, errorLogger) {
+    console.warn(`Tradução da descrição do Pokémon #${id} falhou, usando inglês:`, err?.message || err);
+    errorLogger?.logError(err, { process: 'bot', context: 'pokemon.translate' });
+}
+
 // Único ponto de entrada do jogo: banco primeiro, PokeAPI só no primeiro sorteio.
 async function getPokemon(id, { errorLogger = null } = {}) {
     const existing = await prisma.pokemon.findUnique({ where: { id } });
@@ -175,7 +183,7 @@ async function getPokemon(id, { errorLogger = null } = {}) {
             const data = await fillTranslation(existing);
             return await prisma.pokemon.update({ where: { id }, data });
         } catch (err) {
-            errorLogger?.logError(err, { process: 'bot', context: 'pokemon.translate' });
+            reportTranslationError(err, id, errorLogger);
             return existing;
         }
     }
@@ -187,7 +195,7 @@ async function getPokemon(id, { errorLogger = null } = {}) {
         try {
             Object.assign(row, await fillTranslation(row, { translateGenus: !genusIsPt }));
         } catch (err) {
-            errorLogger?.logError(err, { process: 'bot', context: 'pokemon.translate' });
+            reportTranslationError(err, id, errorLogger);
         }
     }
 

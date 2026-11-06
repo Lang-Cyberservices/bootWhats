@@ -55,7 +55,7 @@ const versionAnnouncer = new VersionAnnouncer(auditLogger);
 const diceRoller = new DiceRoller();
 
 const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
-const forcaGame = new ForcaGame();
+const forcaGame = new ForcaGame({ errorLogger });
 const xadrezGame = new XadrezGame();
 const letrecoGame = new LetrecoGame();
 const pokemonGame = new PokemonGame({ errorLogger });

@@ -91,8 +91,9 @@ function parseJsonArray(value) {
 }
 
 class ForcaGame {
-    constructor() {
+    constructor({ errorLogger = null } = {}) {
         this.activeGamesByChat = new Map();
+        this.errorLogger = errorLogger;
         this.client = null;
     }
 
@@ -249,9 +250,10 @@ class ForcaGame {
             const generation = GENERATION_RANGES[generationArg] ? generationArg : null;
             let pokemon;
             try {
-                pokemon = await getPokemon(randomId(generation));
+                pokemon = await getPokemon(randomId(generation), { errorLogger: this.errorLogger });
             } catch (err) {
                 console.error('Erro ao buscar Pokémon para a forca:', err?.message || err);
+                this.errorLogger?.logError(err, { process: 'bot', context: 'command./forca' });
                 await msg.reply('❌ Não consegui buscar um Pokémon agora, tente novamente.');
                 return;
             }

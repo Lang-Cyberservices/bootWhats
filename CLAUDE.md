@@ -202,10 +202,10 @@ masked) and re-sends the silhouette; the winner gets `10 − 2×hintLevel`. A pe
 calls `pokemon-species` + `pokemon` and stores the row, later draws read only the DB. The sprite is
 not stored, only `image_url` (HOME render, falling back to official artwork). The description is
 stored in pt-BR: PokeAPI's own `pt-br` flavor text if it exists (practically never), otherwise
-Google Cloud Translation v2 with `model: 'nmt'`, authenticated with `GEMINI_API_KEY` in the query
-string. That key only works if the Cloud Translation API is enabled for its GCP project and the key
-isn't restricted to the Generative Language API (AI Studio keys usually are — the error is
-`API_KEY_SERVICE_BLOCKED`). On a failed translation the row is saved with `description = null`
+Google Cloud Translation v2 with `model: 'nmt'`, authenticated with `TRANSLATE_API_KEY` in the query
+string. It is a separate key on purpose: the Gemini key is restricted to the Generative Language API
+and Google won't let it call Translation (`API_KEY_SERVICE_BLOCKED`), so there is no fallback to
+`GEMINI_API_KEY`. On a failed translation the row is saved with `description = null`
 and `description_en` filled, the game shows the English text, and only the translation is retried
 the next time that id is drawn.
 
@@ -338,8 +338,9 @@ linger alongside the ones from `ecosystem.config.js`.
 See `.env_example` for all options. Critical ones:
 - `DATABASE_URL` — MariaDB connection string (required; bot won't start without it)
 - `BOOT_NUMBER` — the bot's own WhatsApp number (used so LlamaResponder can detect replies to itself)
-- `GEMINI_API_KEY` / `GEMINI_MODEL` — for the `/oraculo` command; the key is also used by `/pokemon` for Google
-  Cloud Translation
+- `GEMINI_API_KEY` / `GEMINI_MODEL` — for the `/oraculo` command
+- `TRANSLATE_API_KEY` — Google Cloud Translation key used by `/pokemon` and `/forca pokemon` to translate
+  Pokédex descriptions; without it they stay in English
 - `LLAMA_ENABLED`, `LLAMA_ENDPOINT`, `LLAMA_MODEL` — for the @mention responder
 - `DEV_GROUP_ID` / `APP_ENV` — dev isolation
 - `NSFW_EVIDENCE_DIR` — where deleted media evidence is saved (default `./storage/deleted-media`)
