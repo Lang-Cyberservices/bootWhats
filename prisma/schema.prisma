@@ -451,3 +451,52 @@ model Animal {
 
   @@map("animals")
 }
+
+// Espelho da PokeAPI, preenchido sob demanda: a primeira vez que um Pokémon é
+// sorteado no /pokemon ele vem da API e fica aqui; dali em diante sai só do
+// banco. `id` é o número da Pokédex nacional, por isso sem autoincrement.
+// `description` é pt-BR (da PokeAPI quando existe, senão traduzida pela Google
+// Translation); null significa que a tradução falhou e será refeita no próximo
+// sorteio, enquanto `descriptionEn` serve de fallback.
+model Pokemon {
+  id                Int      @id
+  name              String   @db.VarChar(100)
+  slug              String   @db.VarChar(100)
+  generation        Int
+  types             String   @db.VarChar(100)
+  genus             String?  @db.VarChar(100)
+  descriptionEn     String?  @map("description_en") @db.Text
+  description       String?  @db.Text
+  descriptionSource String?  @map("description_source") @db.VarChar(20)
+  imageUrl          String   @map("image_url") @db.VarChar(512)
+  heightDm          Int?     @map("height_dm")
+  weightHg          Int?     @map("weight_hg")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  games GamePokemon[]
+
+  @@map("pokemons")
+}
+
+model GamePokemon {
+  id                    Int       @id @default(autoincrement())
+  chatId                String    @db.VarChar(255)
+  status                String    @db.VarChar(20)
+  pokemonId             Int
+  hintLevel             Int       @default(0)
+  wrongGuesses          String    @db.Text
+  lastGuessByAuthor     String    @db.Text
+  currentRoundMessageId String?   @db.VarChar(255)
+  roundMessageIds       String    @db.Text
+  startedBy             String    @db.VarChar(255)
+  winnerId              String?   @db.VarChar(255)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  finishedAt            DateTime?
+
+  pokemon Pokemon @relation(fields: [pokemonId], references: [id])
+
+  @@index([chatId, status])
+  @@map("game_pokemon")
+}

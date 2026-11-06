@@ -106,7 +106,7 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null, dioService = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null, dioService = null, pokemonGame = null) {
         this.auditLogger = auditLogger;
         this.errorLogger = errorLogger;
         this.oracleService = oracleService;
@@ -115,6 +115,7 @@ class CommandHandler {
         this.blockedCommands = blockedCommands;
         this.xadrezGame = xadrezGame;
         this.letrecoGame = letrecoGame;
+        this.pokemonGame = pokemonGame;
         this.dioService = dioService;
         this.client = null;
         this.getBotReadyAt = null;
@@ -392,6 +393,10 @@ class CommandHandler {
 
         if (command === '/letreco') {
             return this.handleLetreco(msg, chat, args);
+        }
+
+        if (command === '/pokemon' || command === '/pkm') {
+            return this.handlePokemon(msg, chat, args);
         }
 
         if (command === '/pais') {
@@ -1212,6 +1217,20 @@ class CommandHandler {
         }
     }
 
+    async handlePokemon(msg, chat, args) {
+        if (!this.pokemonGame) {
+            await msg.reply('❌ O "Quem é esse Pokémon?" ainda não está disponível.');
+            return;
+        }
+
+        try {
+            await this.pokemonGame.startGame(msg, chat, args);
+        } catch (err) {
+            console.error('Erro no /pokemon:', err?.message || err);
+            await msg.reply('❌ Não consegui iniciar o "Quem é esse Pokémon?" agora.');
+        }
+    }
+
     sanitizeDescription(text, maxLen = 280) {
         if (!text) return '';
         const clean = String(text)
@@ -1841,7 +1860,7 @@ class CommandHandler {
     }
 
     // Le todos os tokens de `/rank`, em qualquer ordem: um filtro de jogo
-    // exclusivo (xadrez/letreco), um período (diario/semanal/mensal) e uma
+    // exclusivo (xadrez/letreco/pokemon), um período (diario/semanal/mensal) e uma
     // categoria (fala/uso/jogos). Token não reconhecido é ignorado.
     parseRankArgs(args) {
         const tokens = (args || []).map((a) => String(a || '').toLowerCase().trim()).filter(Boolean);
@@ -1853,6 +1872,7 @@ class CommandHandler {
         for (const token of tokens) {
             if (!gameMode && (token === 'xadrez' || token === 'chess')) gameMode = 'xadrez';
             else if (!gameMode && token === 'letreco') gameMode = 'letreco';
+            else if (!gameMode && (token === 'pokemon' || token === 'pokémon' || token === 'pkm')) gameMode = 'pokemon';
             else if (!period && (token === 'diario' || token === 'daily')) period = 'day';
             else if (!period && (token === 'semanal' || token === 'weekly')) period = 'week';
             else if (!period && (token === 'mensal' || token === 'monthly')) period = 'month';
@@ -2106,15 +2126,18 @@ class CommandHandler {
     async sendGameRank(msg, chat, gameType) {
         const titles = {
             xadrez: '♟️ *Xadrez — pontuação*',
-            letreco: '🟩 *Letreco — pontuação*'
+            letreco: '🟩 *Letreco — pontuação*',
+            pokemon: '❓ *Quem é esse Pokémon? — pontuação*'
         };
         const emptyMessages = {
             xadrez: '♟️ Ninguém pontuou no xadrez neste grupo ainda. Use */xadrez* para abrir uma partida.',
-            letreco: '🟩 Ninguém pontuou no letreco neste grupo ainda. Use */letreco* para começar uma partida.'
+            letreco: '🟩 Ninguém pontuou no letreco neste grupo ainda. Use */letreco* para começar uma partida.',
+            pokemon: '❓ Ninguém acertou nenhum Pokémon neste grupo ainda. Use */pokemon* para começar uma partida.'
         };
         const footers = {
             xadrez: '_Vitória vale 30 pontos, empate 15. Partidas com menos de 10 lances não contam._',
-            letreco: '_Quem acerta ganha 5 pontos + 3 por tentativa que sobrou; cada palpite válido vale 1 ponto (até 5). Partida jogada por uma pessoa só vale metade._'
+            letreco: '_Quem acerta ganha 5 pontos + 3 por tentativa que sobrou; cada palpite válido vale 1 ponto (até 5). Partida jogada por uma pessoa só vale metade._',
+            pokemon: '_Quem acerta ganha 10 pontos, menos 2 por dica revelada (uma dica a cada 3 chutes errados)._'
         };
 
         try {

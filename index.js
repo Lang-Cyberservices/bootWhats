@@ -21,6 +21,7 @@ const LlamaResponder = require('./services/LlamaResponder');
 const ForcaGame = require('./services/games/forca');
 const XadrezGame = require('./services/games/xadrez');
 const LetrecoGame = require('./services/games/letreco');
+const PokemonGame = require('./services/games/pokemon');
 const BlockedCommands = require('./services/BlockedCommands');
 const VersionAnnouncer = require('./services/VersionAnnouncer');
 
@@ -57,8 +58,9 @@ const messageFilter = new MessageFilter(['ofensa1', 'spamlink'], auditLogger);
 const forcaGame = new ForcaGame();
 const xadrezGame = new XadrezGame();
 const letrecoGame = new LetrecoGame();
+const pokemonGame = new PokemonGame({ errorLogger });
 const blockedCommands = new BlockedCommands();
-const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands, xadrezGame, letrecoGame, errorLogger, dioService);
+const commandHandler = new CommandHandler(auditLogger, oracleService, diceRoller, forcaGame, blockedCommands, xadrezGame, letrecoGame, errorLogger, dioService, pokemonGame);
 commandHandler.setBotReadyAt(() => botReadyAt);
 let statsCounter;
 const llamaResponder = new LlamaResponder({ auditLogger });
@@ -209,6 +211,7 @@ async function init() {
     await forcaGame.loadActiveGames();
     await xadrezGame.loadActiveGames();
     await letrecoGame.loadActiveGames();
+    await pokemonGame.loadActiveGames();
     await blockedCommands.load();
 
     mediaIngest = new MediaIngest({
@@ -322,6 +325,7 @@ commandHandler.setClient(client);
 forcaGame.setClient(client);
 xadrezGame.setClient(client);
 letrecoGame.setClient(client);
+pokemonGame.setClient(client);
 versionAnnouncer.setClient(client);
 
 // O WhatsApp Web é um PWA: com sessão existente, o service worker serve a
@@ -468,6 +472,7 @@ client.on('message', async (msg) => {
         await forcaGame.handleMessage(msg, chat);
         await xadrezGame.handleMessage(msg, chat);
         await letrecoGame.handleMessage(msg, chat);
+        await pokemonGame.handleMessage(msg, chat);
     }
     await llamaResponder.handleMessage(msg, chat);
 });

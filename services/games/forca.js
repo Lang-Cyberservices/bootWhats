@@ -3,7 +3,8 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { prisma } = require('../database');
 const { getSenderId } = require('../messageUtils');
-const { buildAnimalMessage, buildCountryInfo, buildDictionaryInfo, buildMovieMessage } = require('./answerInfo');
+const { buildAnimalMessage, buildCountryInfo, buildDictionaryInfo, buildMovieMessage, buildPokemonMessage } = require('./answerInfo');
+const { GENERATION_RANGES, getPokemon, randomId, normalizeName } = require('./pokemonData');
 
 const MAX_ERRORS = 7;
 const DICTIONARY_MIN_LENGTH = 4;
@@ -24,6 +25,7 @@ const MODE_ALIASES = {
     filme: 'filmes', filmes: 'filmes',
     pais: 'paises', paises: 'paises',
     fauna: 'fauna', animal: 'fauna', animais: 'fauna', bicho: 'fauna', bichos: 'fauna',
+    pokemon: 'pokemon', pokemons: 'pokemon', pkm: 'pokemon',
     dicionario: 'dicionario', dicionarios: 'dicionario',
     substantivo: 'substantivo', substantivos: 'substantivo',
     verbo: 'verbo', verbos: 'verbo',
@@ -40,12 +42,13 @@ const DICTIONARY_MEANING_FIELD = {
 };
 
 // Sorteados quando o /forca vem sem argumento.
-const RANDOM_MODES = ['filmes', 'paises', 'fauna', 'dicionario', 'substantivo', 'verbo', 'adjetivo', 'adverbio'];
+const RANDOM_MODES = ['filmes', 'paises', 'fauna', 'pokemon', 'dicionario', 'substantivo', 'verbo', 'adjetivo', 'adverbio'];
 
 const MODE_TITLES = {
     filmes: '🎬 Jogo da Forca (Filmes)',
     paises: '🌍 Jogo da Forca (Países)',
     fauna: '🐾 Jogo da Forca (Fauna)',
+    pokemon: '❓ Jogo da Forca (Pokémon)',
     dicionario: '📖 Jogo da Forca (Dicionário)',
     substantivo: '📖 Jogo da Forca (Substantivo)',
     verbo: '📖 Jogo da Forca (Verbo)',
@@ -57,6 +60,7 @@ const MODE_LABELS = {
     filmes: 'filmes',
     paises: 'países',
     fauna: 'animais',
+    pokemon: 'Pokémon',
     dicionario: 'dicionário',
     substantivo: 'substantivos',
     verbo: 'verbos',
@@ -201,6 +205,7 @@ class ForcaGame {
                 '• /forca filmes\n' +
                 '• /forca pais\n' +
                 '• /forca fauna\n' +
+                '• /forca pokemon (ou /forca pokemon 1 até 9, só daquela geração)\n' +
                 '• /forca dicionario\n' +
                 '• /forca substantivo\n' +
                 '• /forca verbo\n' +
@@ -238,6 +243,20 @@ class ForcaGame {
             }
             answer = animal.name;
             answerRef = String(animal.id);
+        } else if (mode === 'pokemon') {
+            // `/forca pokemon 3` limita à 3ª geração; sem número (ou no sorteio de modo), todos.
+            const generationArg = Number(normalize(String(args?.[1] || '')).replace(/(a|ª|o|º)$/, ''));
+            const generation = GENERATION_RANGES[generationArg] ? generationArg : null;
+            let pokemon;
+            try {
+                pokemon = await getPokemon(randomId(generation));
+            } catch (err) {
+                console.error('Erro ao buscar Pokémon para a forca:', err?.message || err);
+                await msg.reply('❌ Não consegui buscar um Pokémon agora, tente novamente.');
+                return;
+            }
+            answer = pokemon.name;
+            answerRef = String(pokemon.id);
         } else {
             const entry = await this.pickRandomDictionaryEntry(mode);
             if (!entry) {
@@ -494,11 +513,13 @@ class ForcaGame {
     }
 
     async processWordGuess(chat, game, authorId, participant, guessRaw) {
-        // Hífen conta como espaço: "tatu bola" acerta "tatu-bola".
-        const normalizedGuess = normalizeWholeGuess(guessRaw);
-        const normalizedAnswer = normalizeWholeGuess(game.answer);
+        // Hífen conta como espaço: "tatu bola" acerta "tatu-bola". Nome de Pokémon é mais
+        // permissivo, como no /pokemon: "mr mime" acerta "Mr. Mime" e "nidoran" acerta "Nidoran♀".
+        const isPokemon = game.mode === 'pokemon';
+        const normalizedGuess = isPokemon ? normalizeName(guessRaw) : normalizeWholeGuess(guessRaw);
+        const normalizedAnswer = isPokemon ? normalizeName(game.answer) : normalizeWholeGuess(game.answer);
 
-        if (normalizedGuess === normalizedAnswer) {
+        if (normalizedGuess && normalizedGuess === normalizedAnswer) {
             const hiddenDistinct = [...game.answerLetterSet].filter((l) => !game.guessedLetters.has(l)).length;
             participant.pointsEarned += 10 + (2 * hiddenDistinct);
             await this.finishGame(chat, game, { winnerId: authorId, won: true });
@@ -566,6 +587,7 @@ class ForcaGame {
         if (game.mode === 'filmes') guessHint = '• o nome completo do filme.';
         if (game.mode === 'paises') guessHint = '• o nome completo do país.';
         if (game.mode === 'fauna') guessHint = '• o nome completo do animal.';
+        if (game.mode === 'pokemon') guessHint = '• o nome do Pokémon.';
         lines.push(
             '', 'Todos podem jogar. Responda ESTA imagem com:', '• uma letra', 'ou', guessHint,
             '', 'Depois de jogar uma letra, outra pessoa tem prioridade por 60 segundos.'
@@ -678,6 +700,16 @@ class ForcaGame {
             if (game.mode === 'paises') {
                 const text = await buildCountryInfo(game.answer, game.answerRef);
                 await chat.sendMessage(text);
+                return;
+            }
+
+            if (game.mode === 'pokemon') {
+                const { caption, media } = await buildPokemonMessage(game.answerRef, game.answer);
+                if (media) {
+                    await chat.sendMessage(media, { caption });
+                } else {
+                    await chat.sendMessage(caption);
+                }
                 return;
             }
 

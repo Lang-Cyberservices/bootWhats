@@ -45,6 +45,10 @@ node tools/xadrez_preview.js --rules
 # Letreco board renderer + scorer/normalizer check (no WhatsApp, no DB)
 node tools/letreco_preview.js "CASA" "CAMA,SACO,AAAA" /tmp/letreco.png
 node tools/letreco_preview.js --rules
+
+# /pokemon silhouette + reveal + hint captions (fills the `pokemons` mirror unless --no-db)
+node tools/pokemon_preview.js 132 /tmp/poke.png
+node tools/pokemon_preview.js --rules
 ```
 
 There are no automated tests (`npm test` exits with an error by design).
@@ -157,16 +161,22 @@ behavior) without a redeploy.
 | `games/letreco.js` | `/letreco` — Wordle in the group: one shared board, 10 attempts, guesses arrive as replies |
 | `games/letrecoWords.js` | Pure normalizer + two-pass green/yellow/red scorer; no Prisma, no WhatsApp |
 | `games/letrecoBoard.js` | Renders the letreco board PNG with `canvas` (letters drawn, no sprites) |
+| `games/pokemon.js` | `/pokemon` ("Quem é esse Pokémon?") — silhouette, free-for-all, a hint every 3 wrong guesses, 10-min expiry |
+| `games/pokemonData.js` | Lazy `pokemons` mirror of PokeAPI, pt-BR translation, name normalizer and `maskName` |
+| `games/pokemonImage.js` | Renders the silhouette and the reveal PNG with `canvas`; crops the sprite to its visible pixels |
 
 Games follow a shared pattern: in-memory `Map` keyed by `chatId`, write-through to Prisma so a
 restart rehydrates via `loadActiveGames()`, and player input arrives as a **reply to the bot's last
 round message** (matched against `roundMessageIds`) rather than as a command. Non-command messages
 reach them from the `if (!isCommand)` block in `index.js`. Aggregate points for every game live in
-`game_scores`, keyed by `gameType` (`forca`, `xadrez`, `letreco`) — the 🎮 section of `/rank` groups
+`game_scores`, keyed by `gameType` (`forca`, `xadrez`, `letreco`, `pokemon`) — the 🎮 section of `/rank` groups
 by `authorId` without filtering `gameType`, so a new game shows up there for free.
 
 `/forca` and `/letreco` share their answer banks (`dictionary`, `movies`, `countries`, `animals`) and
-the end-of-game reveal in `games/answerInfo.js`. The `fauna` category draws from `animals`, which is
+the end-of-game reveal in `games/answerInfo.js`. `/forca` also has a `pokemon` mode (`/forca pokemon [1-9]`,
+part of the random draw) that picks through the same `getPokemon` as `/pokemon`, stores the dex number
+in `answerRef`, compares whole-name guesses with `normalizeName` (punctuation-insensitive, unlike the
+other modes) and reveals with `buildPokemonMessage` — the coloured render plus the same facts line. The `fauna` category draws from `animals`, which is
 filled by `tools/import_animals.js` and nothing else — an empty table just means the category
 answers "não encontrei". `animals.img_url` is the Commons *original* (can be tens of MB, or SVG), so
 `buildAnimalMessage` never sends it as is: it asks `Special:FilePath/<file>?width=800` for a
@@ -182,6 +192,22 @@ changes whose turn it is; a wrong length, a stale board or the 60 s same-player 
 the game untouched. Guesses are **not** checked against the category bank — the deliberate choice
 was to let people probe letters with any word of the right length; `isGuessAcceptable()` is the one
 place to change if that ever flips.
+
+`/pokemon` relaxes that pattern on purpose: a guess counts as a reply to *any* round message of the
+active game, because a name guess doesn't depend on board state. Every third wrong guess raises
+`hintLevel` (generation + types → letter count with first/last letter → flavor text with the name
+masked) and re-sends the silhouette; the winner gets `10 − 2×hintLevel`. A per-player cooldown
+(`POKEMON_COOLDOWN_MS`) keeps one person from spamming through the hints. Pokémon data lives in
+`pokemons`, a mirror of PokeAPI filled **on demand** by `getPokemon(id)`: the first draw of an id
+calls `pokemon-species` + `pokemon` and stores the row, later draws read only the DB. The sprite is
+not stored, only `image_url` (HOME render, falling back to official artwork). The description is
+stored in pt-BR: PokeAPI's own `pt-br` flavor text if it exists (practically never), otherwise
+Google Cloud Translation v2 with `model: 'nmt'`, authenticated with `GEMINI_API_KEY` in the query
+string. That key only works if the Cloud Translation API is enabled for its GCP project and the key
+isn't restricted to the Generative Language API (AI Studio keys usually are — the error is
+`API_KEY_SERVICE_BLOCKED`). On a failed translation the row is saved with `description = null`
+and `description_en` filled, the game shows the English text, and only the translation is retried
+the next time that id is drawn.
 
 **Database (Prisma + MariaDB)**
 Schema lives in `prisma/schema.prisma`. Key models: `Log`, `MediaHash`, `MediaAnalysisJob`, `OraclePrediction`, `MessageStats`, `MessageStatsBucket`, `Admin`, `WelcomeConfig`, `Joke`, `PowerAnimal`, `PhilosopherProtector`, `UserHoroscope`, `DailyHoroscope`.
@@ -312,7 +338,8 @@ linger alongside the ones from `ecosystem.config.js`.
 See `.env_example` for all options. Critical ones:
 - `DATABASE_URL` — MariaDB connection string (required; bot won't start without it)
 - `BOOT_NUMBER` — the bot's own WhatsApp number (used so LlamaResponder can detect replies to itself)
-- `GEMINI_API_KEY` / `GEMINI_MODEL` — for the `/oraculo` command
+- `GEMINI_API_KEY` / `GEMINI_MODEL` — for the `/oraculo` command; the key is also used by `/pokemon` for Google
+  Cloud Translation
 - `LLAMA_ENABLED`, `LLAMA_ENDPOINT`, `LLAMA_MODEL` — for the @mention responder
 - `DEV_GROUP_ID` / `APP_ENV` — dev isolation
 - `NSFW_EVIDENCE_DIR` — where deleted media evidence is saved (default `./storage/deleted-media`)
@@ -320,6 +347,8 @@ See `.env_example` for all options. Critical ones:
 - `DIO_UNLIMITED_NUMBERS` — comma-separated phone numbers (with country code) exempt from `/dio`'s
   3-per-day limit; matched against every identity `collectAuthorIdentities` finds (phone and LID).
   The general `MAX_COMMANDS_PER_MINUTE` limit still applies to them
+- `POKEMON_COOLDOWN_MS` / `POKEMON_TIMEOUT_MS` — per-player wait between guesses (default 15 s) and
+  expiry of a `/pokemon` match (default 10 min)
 - `LETRECO_COOLDOWN_MS` / `LETRECO_TIMEOUT_MS` — same-player wait (default 60 s) and idle expiry of a
   letreco match (default 6 h); both exist so the rules can be exercised without waiting
 - `FOLHAS_GROUP_ID` / `FOLHAS_DB_NAME` / `FOLHAS_DEFAULT_PASSWORD` — `/folhas` sync target group,

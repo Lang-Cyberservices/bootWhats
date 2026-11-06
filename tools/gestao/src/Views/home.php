@@ -541,7 +541,7 @@
 
             <button class="cmd" type="button">
                 <span class="name">🎯 /forca</span>
-                <span class="desc">Jogo da forca em grupo: palavras, filmes, países ou animais.</span>
+                <span class="desc">Jogo da forca em grupo: palavras, filmes, países, animais ou Pokémon.</span>
                 <span class="more">[ + detalhes ]</span>
                 <div class="cmd-details" hidden>
                     <h3>Uso</h3>
@@ -551,6 +551,7 @@
                         <li><code>/forca filmes</code> — um filme da base do bot.</li>
                         <li><code>/forca pais</code> — um país.</li>
                         <li><code>/forca fauna</code> — um animal da fauna brasileira.</li>
+                        <li><code>/forca pokemon</code> — um Pokémon; <code>/forca pokemon 1</code> até <code>9</code> limita àquela geração. No chute do nome, pontuação e espaços não contam (<code>mr mime</code> acerta <code>Mr. Mime</code>).</li>
                         <li><code>/forca substantivo</code> · <code>verbo</code> · <code>adjetivo</code> · <code>advérbio</code> — uma palavra daquela classe gramatical.</li>
                     </ul>
                     <p>Os modos funcionam no singular ou no plural (<code>/forca pais</code> ou <code>/forca paises</code>, <code>/forca verbo</code> ou <code>/forca verbos</code>), e o acento é opcional. Um modo desconhecido não inicia partida: o bot responde com a lista de opções válidas.</p>
@@ -559,7 +560,7 @@
                     <p>Nos modos <strong>países</strong>, <strong>filmes</strong> e <strong>fauna</strong> a resposta pode ter mais de uma palavra — espaços e hífens já aparecem revelados na máscara, só as letras ficam escondidas, e no chute da resposta inteira o hífen pode ser digitado como espaço. Ao fim da partida o bot manda a descrição da resposta: a definição da palavra, a ficha do filme, a bandeira e a descrição do país, ou a foto e a descrição do animal.</p>
                     <h3>Exemplos</h3>
                     <div class="examples">
-                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 8 modos e inicia a partida</div></div>
+                        <div class="ex"><div class="in">/forca</div><div class="out">🎯 sorteia entre os 9 modos e inicia a partida</div></div>
                         <div class="ex"><div class="in">/forca pais</div><div class="out">🌍 Jogo da Forca (Países) — imagem da forca + nome mascarado</div></div>
                         <div class="ex"><div class="in">/forca verbo</div><div class="out">📖 Jogo da Forca (Verbo) — imagem da forca + palavra mascarada</div></div>
                     </div>
@@ -727,6 +728,30 @@
             </button>
 
             <button class="cmd" type="button">
+                <span class="name">❓ /pokemon · /pkm</span>
+                <span class="desc">Quem é esse Pokémon? O grupo adivinha pela silhueta.</span>
+                <span class="more">[ + detalhes ]</span>
+                <div class="cmd-details" hidden>
+                    <h3>Uso</h3>
+                    <ul>
+                        <li><code>/pokemon</code> — sorteia entre todos os 1025 Pokémon e manda a silhueta.</li>
+                        <li><code>/pokemon 1</code> até <code>/pokemon 9</code> — sorteia só daquela geração.</li>
+                        <li>Responder a imagem com o nome — <code>Mr. Mime</code>, <code>mr mime</code> ou <code>mr-mime</code> dão no mesmo.</li>
+                        <li><code>/pokemon encerrar</code> — encerra a partida (quem começou ou um administrador do grupo).</li>
+                    </ul>
+                    <h3>Detalhes</h3>
+                    <p>Apenas uma partida por grupo por vez, e todos podem chutar respondendo a qualquer imagem da partida. A cada <strong>3 chutes errados</strong> sai uma dica nova, junto com a silhueta: primeiro a <strong>geração e o tipo</strong>, depois <strong>quantas letras</strong> o nome tem com a primeira e a última, e por fim a <strong>descrição da Pokédex</strong> com o nome apagado. Cada pessoa espera 15 segundos entre um chute e outro.</p>
+                    <p>Quem acerta primeiro ganha <strong>10 pontos, menos 2 por dica revelada</strong> (10, 8, 6 ou 4). Chute errado não tira pontos. Se ninguém acertar em 10 minutos, o bot revela o Pokémon e ninguém pontua. No fim sai a imagem colorida com nome, tipo, geração, altura, peso e a descrição. Os pontos somam no placar de jogos do <code>/rank</code>, e o ranking só do jogo sai em <code>/rank pokemon</code>. A partida sobrevive a reinícios do bot.</p>
+                    <h3>Exemplos</h3>
+                    <div class="examples">
+                        <div class="ex"><div class="in">/pokemon</div><div class="out">❓ silhueta de um Pokémon qualquer</div></div>
+                        <div class="ex"><div class="in">/pokemon 1</div><div class="out">❓ silhueta de um dos 151 da 1ª geração</div></div>
+                        <div class="ex"><div class="in">ditto</div><div class="out">🎉 Parabéns! — imagem colorida, ficha e descrição</div></div>
+                    </div>
+                </div>
+            </button>
+
+            <button class="cmd" type="button">
                 <span class="name">🚫 /proibir<span class="badge-adm">ADMINS</span></span>
                 <span class="desc">Bloqueia uma imagem ou figurinha.</span>
                 <span class="more">[ + detalhes ]</span>
@@ -755,10 +780,10 @@
                         <li><code>/rank diario</code>, <code>/rank semanal</code> ou <code>/rank mensal</code> — ranking do período.</li>
                         <li><code>/rank fala</code>, <code>/rank uso</code> ou <code>/rank jogos</code> — só essa categoria, top 10.</li>
                         <li>Categoria e período podem vir juntos, em qualquer ordem: <code>/rank fala semanal</code> é igual a <code>/rank semanal fala</code>.</li>
-                        <li><code>/rank xadrez</code> ou <code>/rank letreco</code> — ranking só daquele jogo, com vitórias, empates e derrotas.</li>
+                        <li><code>/rank xadrez</code>, <code>/rank letreco</code> ou <code>/rank pokemon</code> — ranking só daquele jogo, com vitórias, empates e derrotas.</li>
                     </ul>
                     <h3>Detalhes</h3>
-                    <p>No ranking geral mostra três top 5: <strong>quem mais fala</strong> (mensagens), <strong>quem mais usa o bot</strong> (comandos) e o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez e no letreco, com o total de vitórias, empates e derrotas.</p>
+                    <p>No ranking geral mostra três top 5: <strong>quem mais fala</strong> (mensagens), <strong>quem mais usa o bot</strong> (comandos) e o <strong>placar de jogos</strong>, que soma numa única pontuação o que a pessoa fez na forca, no xadrez, no letreco e no /pokemon, com o total de vitórias, empates e derrotas.</p>
                     <p>Pedindo uma categoria isolada (<code>fala</code>, <code>uso</code> ou <code>jogos</code>) o ranking mostra só ela, mas com o dobro de gente: <strong>top 10</strong> em vez de top 5.</p>
                     <p><code>jogos</code> ainda não tem filtro de período — o placar de jogos é sempre geral, mesmo combinado com <code>diario</code>/<code>semanal</code>/<code>mensal</code>.</p>
                     <h3>Exemplos</h3>
