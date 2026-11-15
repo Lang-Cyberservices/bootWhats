@@ -344,7 +344,8 @@ See `.env_example` for all options. Critical ones:
 - `LLAMA_ENABLED`, `LLAMA_ENDPOINT`, `LLAMA_MODEL` — for the @mention responder
 - `DEV_GROUP_ID` / `APP_ENV` — dev isolation
 - `NSFW_EVIDENCE_DIR` — where deleted media evidence is saved (default `./storage/deleted-media`)
-- `MAX_COMMANDS_PER_MINUTE` — per-user rate limit (default 3 per 2-minute window)
+- `MAX_COMMANDS_PER_MINUTE` — per-user rate limit (default 3 per 2-minute window). Dice rolls
+  (`/d`, `/2d6`…) and the admin-only `protected` commands are exempt and don't count toward it
 - `DIO_UNLIMITED_NUMBERS` — comma-separated phone numbers (with country code) exempt from `/dio`'s
   3-per-day limit; matched against every identity `collectAuthorIdentities` finds (phone and LID).
   The general `MAX_COMMANDS_PER_MINUTE` limit still applies to them

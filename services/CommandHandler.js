@@ -255,7 +255,10 @@ class CommandHandler {
         const isKnown = KNOWN_COMMANDS.includes(canonicalCommand);
         // /fechar e /abrir sao isentos do flood: sao restritos a administradores e
         // fechar varios comandos seguidos estouraria a cota de 3 comandos por 2 minutos.
-        if (isKnown && !definition?.protected && isRateLimited(authorId)) {
+        // Rolagens de dados (/d, /2d6...) tambem: numa mesa se rola muito em sequencia,
+        // e elas nem entram no historico, entao nao consomem a cota dos outros comandos.
+        const isFloodExempt = definition?.protected || diceCommandInfo?.isDiceCommand;
+        if (isKnown && !isFloodExempt && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
             return;
         }
