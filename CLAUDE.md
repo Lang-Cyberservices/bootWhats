@@ -265,7 +265,7 @@ regardless of `sent`) to show the current version — so every new announcement 
 what `/sobre` reports, with no separate place to bump.
 
 **Error persistence**
-`error_logs` holds fatal/unexpected errors from both processes (`process` is `bot` or `analyzer`),
+`error_logs` holds fatal/unexpected errors from both processes (`process` is `bot` or `analyzer`; `gestao` for the panel, see below),
 written through `ErrorLogger.logError(err, { process, context })` — never thrown from itself, only
 `console.error`s if the insert fails. This is deliberately narrow, not a mirror of every
 `console.error` in the codebase (most command/game failures stay console-only): it covers
@@ -284,7 +284,23 @@ come from the DB and are still sent. For now the scrape is switched off entirely
 brings the process back up. The `tools/gestao` admin panel reads this table as its post-login
 landing page (`?route=errors`, see `AuthController::login()` and the `default:` case in
 `public/index.php`) — rows can be marked `resolved` from there, and the screen shows only unresolved
-rows by default (`?all=1` for history).
+rows by default (`?all=1` for history). The panel itself writes here too, with `process = 'gestao'`
+(only the `/sua-idade` Gemini failures, context `page./sua-idade`).
+
+**`/sua-idade` (public page of `tools/gestao`)**
+A game on the public site, not a bot command: 5 questions about childhood drawn from
+`age_questions` (managed at `?route=age-questions`), free-text answers, and Gemini estimates the
+visitor's age and teases them. `AgeQuizController` serves both sides on the same path — GET draws
+5 + 2 spares (for "trocar pergunta") and stores their ids in the PHP session; POST takes JSON,
+accepts only ids from that session, and re-reads the question texts from the DB rather than trusting
+the client. `GeminiClient` is a plain `curl` REST call with the bot's `GEMINI_API_KEY`/`GEMINI_MODEL`,
+asking for a `responseSchema` JSON (`idade`, `comentario`, `pistas`) so the page builds the
+"Sua idade é XX anos..." sentence itself. Answers go in the prompt as a JSON array marked as data,
+and the system instruction tells Gemini to tease manipulation attempts instead of obeying them.
+`age_guesses` holds one row per attempt (sha256 of `REMOTE_ADDR` + estimated age, never the answers)
+and is the rate limit: 5 per IP per hour and 60 overall per hour, protecting the Gemini quota. The
+row is inserted *before* the call, so a failing Gemini still counts. If the site ever sits behind a
+reverse proxy, `REMOTE_ADDR` becomes the proxy's and the per-IP limit turns global.
 
 **Folhas integration (`/folhas`)**
 `folhas` is a separate CodeIgniter app (book club) whose schema lives in the same MariaDB server;

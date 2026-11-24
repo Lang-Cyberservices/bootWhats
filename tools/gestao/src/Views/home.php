@@ -899,6 +899,13 @@
         </div>
     </section>
 
+    <section id="brincadeiras">
+        <h2>Brincadeiras</h2>
+        <div class="sobre">
+            <p class="prompt"><a href="/sua-idade">/sua-idade</a> — responda 5 perguntas sobre a sua infância e o Diogenes adivinha quantos anos você tem.</p>
+        </div>
+    </section>
+
     <footer>
         <a class="admin-link" href="/admin">[ acesso administrativo ]</a>
         <p>diogenes<?= !empty($currentVersion) ? ' v' . htmlspecialchars($currentVersion, ENT_QUOTES, 'UTF-8') : '' ?> — rodando num pc do milhão</p>

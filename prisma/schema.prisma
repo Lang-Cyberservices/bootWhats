@@ -500,3 +500,26 @@ model GamePokemon {
   @@index([chatId, status])
   @@map("game_pokemon")
 }
+
+// Perguntas da brincadeira /sua-idade do site público; gerenciadas no painel (?route=age-questions).
+model AgeQuestion {
+  id        Int      @id @default(autoincrement())
+  text      String   @db.VarChar(255)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("age_questions")
+}
+
+// Uma linha por tentativa no /sua-idade — é o que limita as chamadas ao Gemini por IP.
+// Guarda só o hash do IP e a idade estimada; as respostas não são gravadas.
+model AgeGuess {
+  id        Int      @id @default(autoincrement())
+  ipHash    String   @db.VarChar(64)
+  age       Int?
+  createdAt DateTime @default(now())
+
+  @@index([ipHash, createdAt])
+  @@index([createdAt])
+  @@map("age_guesses")
+}
