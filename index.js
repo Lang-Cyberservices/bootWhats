@@ -357,6 +357,12 @@ client.on('ready',  async() => {
     if (isDev && devGroupId) {
         console.log(`🔧 Modo desenvolvimento: apenas o grupo ${devGroupId} será processado.`);
     }
+    // O aviso de versão não depende do BOOT_NUMBER: dispara antes, para que um
+    // .env incompleto ou um getNumberId travado não o segure.
+    versionAnnouncer.announcePending({ isDev, devGroupId }).catch((err) => {
+        console.error('Erro ao processar aviso de versão pendente:', err.message);
+    });
+
     const myNumber = (process.env.BOOT_NUMBER || '').trim();
     if (!myNumber) {
         console.warn('⚠️ BOOT_NUMBER não definido. Ignorando setBotId.');
@@ -380,10 +386,6 @@ client.on('ready',  async() => {
     } else {
         console.warn('⚠️ Não foi possível resolver o BOOT_NUMBER com getNumberId.');
     }
-
-    versionAnnouncer.announcePending({ isDev, devGroupId }).catch((err) => {
-        console.error('Erro ao processar aviso de versão pendente:', err.message);
-    });
 });
 
 client.on('disconnected', async (reason) => {
