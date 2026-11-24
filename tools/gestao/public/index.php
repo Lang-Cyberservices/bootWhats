@@ -7,6 +7,8 @@ use Gestao\Database;
 use Gestao\Middleware;
 use Gestao\Controllers\AuthController;
 use Gestao\Controllers\AdminController;
+use Gestao\Controllers\AgeQuestionController;
+use Gestao\Controllers\AgeQuizController;
 use Gestao\Controllers\BooksController;
 use Gestao\Controllers\CountryController;
 use Gestao\Controllers\ErrorLogController;
@@ -15,6 +17,7 @@ use Gestao\Controllers\ProxyController;
 use Gestao\Controllers\SystemController;
 use Gestao\Controllers\WelcomeController;
 use Gestao\Repositories\AdminRepository;
+use Gestao\Repositories\AgeQuestionRepository;
 use Gestao\Repositories\BookRecommendationRepository;
 use Gestao\Repositories\BooksDownloadRepository;
 use Gestao\Repositories\CountryRepository;
@@ -28,7 +31,9 @@ require __DIR__ . '/../src/Config.php';
 require __DIR__ . '/../src/Database.php';
 require __DIR__ . '/../src/Auth.php';
 require __DIR__ . '/../src/Middleware.php';
+require __DIR__ . '/../src/GeminiClient.php';
 require __DIR__ . '/../src/Repositories/AdminRepository.php';
+require __DIR__ . '/../src/Repositories/AgeQuestionRepository.php';
 require __DIR__ . '/../src/Repositories/BooksDownloadRepository.php';
 require __DIR__ . '/../src/Repositories/BookRecommendationRepository.php';
 require __DIR__ . '/../src/Repositories/CountryRepository.php';
@@ -39,6 +44,8 @@ require __DIR__ . '/../src/Repositories/VersionRepository.php';
 require __DIR__ . '/../src/Repositories/WelcomeConfigRepository.php';
 require __DIR__ . '/../src/Controllers/AuthController.php';
 require __DIR__ . '/../src/Controllers/AdminController.php';
+require __DIR__ . '/../src/Controllers/AgeQuestionController.php';
+require __DIR__ . '/../src/Controllers/AgeQuizController.php';
 require __DIR__ . '/../src/Controllers/BooksController.php';
 require __DIR__ . '/../src/Controllers/CountryController.php';
 require __DIR__ . '/../src/Controllers/ErrorLogController.php';
@@ -58,6 +65,7 @@ $welcomeRepo = new WelcomeConfigRepository($db->pdo());
 $countriesRepo = new CountryRepository($db->pdo());
 $errorLogsRepo = new ErrorLogRepository($db->pdo());
 $proxiesRepo = new ProxyRepository($db->pdo());
+$ageQuestionsRepo = new AgeQuestionRepository($db->pdo());
 $auth = new Auth($adminsRepo);
 $middleware = new Middleware($adminsRepo);
 
@@ -70,11 +78,15 @@ $welcomeController = new WelcomeController($welcomeRepo);
 $countryController = new CountryController($countriesRepo);
 $errorLogController = new ErrorLogController($errorLogsRepo);
 $proxyController = new ProxyController($proxiesRepo);
+$ageQuestionController = new AgeQuestionController($ageQuestionsRepo);
+$ageQuizController = new AgeQuizController($ageQuestionsRepo, $errorLogsRepo);
 
 $path = rtrim((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
 
 if ($path === '/admin') {
     $route = 'admin';
+} elseif ($path === '/sua-idade') {
+    $route = 'sua-idade';
 } else {
     $route = (string) ($_GET['route'] ?? 'home');
 }
@@ -84,7 +96,7 @@ if ($route === 'login') {
     exit;
 }
 
-$publicRoutes = ['home', 'admin'];
+$publicRoutes = ['home', 'admin', 'sua-idade'];
 
 if (!in_array($route, $publicRoutes, true)) {
     $middleware->requireAuth($route);
@@ -124,6 +136,12 @@ switch ($route) {
         break;
     case 'proxies':
         $proxyController->index();
+        break;
+    case 'sua-idade':
+        $ageQuizController->index();
+        break;
+    case 'age-questions':
+        $ageQuestionController->index();
         break;
     case 'errors':
     default:

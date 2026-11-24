@@ -3,9 +3,12 @@
 //
 // Compartilhado entre /forca e /letreco: ambos sorteiam respostas das mesmas
 // tabelas (Dictionary, Movie, Country, Animal) e revelam o significado ao terminar.
+// O modo pokemon do /forca lê do espelho `pokemons`, o mesmo do /pokemon.
 const { MessageMedia } = require('whatsapp-web.js');
 const { prisma } = require('../database');
 const { siglaToFlagEmoji } = require('../countryUtils');
+const { fetchSprite, pokemonFactsLine, pokemonDescription, formatDexNumber } = require('./pokemonData');
+const { renderReveal } = require('./pokemonImage');
 
 const ANIMAL_IMAGE_WIDTH = 800;
 const ANIMAL_IMAGE_TIMEOUT_MS = 15_000;
@@ -146,9 +149,39 @@ async function buildAnimalMessage(animalId, fallbackName) {
     }
 }
 
+// Mesma ficha e mesma imagem colorida da revelação do /pokemon. A linha já está no espelho
+// porque foi o sorteio que a gravou; aqui não se chama a PokeAPI.
+async function buildPokemonMessage(pokemonId, fallbackName) {
+    const fallback = { caption: `❓ *${fallbackName}*\n\nDescrição indisponível.`, media: null };
+
+    try {
+        const id = Number(pokemonId);
+        const pokemon = Number.isInteger(id) && id > 0 ? await prisma.pokemon.findUnique({ where: { id } }) : null;
+        if (!pokemon) return fallback;
+
+        const lines = [`❓ *${pokemon.name}* ${formatDexNumber(pokemon.id)}`, pokemonFactsLine(pokemon)];
+        const description = sanitizeDescription(pokemonDescription(pokemon), 1000);
+        if (description) lines.push('', `📖 ${description}`);
+
+        let media = null;
+        try {
+            const buffer = await renderReveal(await fetchSprite(pokemon.imageUrl));
+            media = new MessageMedia('image/png', buffer.toString('base64'), 'pokemon.png');
+        } catch (err) {
+            console.error('Erro ao baixar imagem do Pokémon:', err?.message || err);
+        }
+
+        return { caption: lines.join('\n'), media };
+    } catch (err) {
+        console.error('Erro ao buscar ficha do Pokémon:', err?.message || err);
+        return fallback;
+    }
+}
+
 module.exports = {
     sanitizeDescription,
     buildAnimalMessage,
+    buildPokemonMessage,
     buildCountryInfo,
     buildDictionaryInfo,
     buildMovieMessage

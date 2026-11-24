@@ -42,6 +42,14 @@ final class Config
         ];
     }
 
+    public static function env(string $key, ?string $default = null): ?string
+    {
+        self::loadEnv();
+
+        $value = getenv($key);
+        return $value === false || $value === '' ? $default : $value;
+    }
+
     private static function loadEnv(): void
     {
         if (self::$envLoaded) {

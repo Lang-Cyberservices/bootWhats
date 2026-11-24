@@ -23,6 +23,23 @@ const MAX_COMMANDS_PER_MINUTE = (() => {
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_COMMANDS_PER_MINUTE;
 })();
 const commandHistoryByUser = new Map(); // key: authorId, value: number[]
+// Números fora do limite diário do /dio, em dígitos. Celular BR de 13 dígitos
+// entra também sem o nono dígito: o WhatsApp ainda reporta contas antigas assim.
+const DIO_UNLIMITED_NUMBERS = (() => {
+    const numbers = new Set();
+    for (const raw of String(process.env.DIO_UNLIMITED_NUMBERS || '').split(',')) {
+        const digits = raw.replace(/\D/g, '');
+        if (!digits) continue;
+        numbers.add(digits);
+        if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') {
+            numbers.add(digits.slice(0, 4) + digits.slice(5));
+        }
+    }
+    return numbers;
+})();
+// Ranking do /livros desligado: o publishnews.com.br passou a responder 403 (desafio da
+// Cloudflare). Religar quando fetchWeeklyBooksFromPublishNews apontar para outra fonte.
+const BOOKS_RANKING_ENABLED = false;
 const NEWS_COOLDOWN_MS = 14 * 60_000;
 const lastNewsRequestByUser = new Map(); // key: authorId, value: timestamp
 let lastCotacaoRequestAt = 0;
@@ -89,7 +106,7 @@ function isRateLimited(authorId) {
 }
 
 class CommandHandler {
-    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null, dioService = null) {
+    constructor(auditLogger, oracleService, diceRoller = null, forcaGame = null, blockedCommands = null, xadrezGame = null, letrecoGame = null, errorLogger = null, dioService = null, pokemonGame = null) {
         this.auditLogger = auditLogger;
         this.errorLogger = errorLogger;
         this.oracleService = oracleService;
@@ -98,6 +115,7 @@ class CommandHandler {
         this.blockedCommands = blockedCommands;
         this.xadrezGame = xadrezGame;
         this.letrecoGame = letrecoGame;
+        this.pokemonGame = pokemonGame;
         this.dioService = dioService;
         this.client = null;
         this.getBotReadyAt = null;
@@ -237,7 +255,10 @@ class CommandHandler {
         const isKnown = KNOWN_COMMANDS.includes(canonicalCommand);
         // /fechar e /abrir sao isentos do flood: sao restritos a administradores e
         // fechar varios comandos seguidos estouraria a cota de 3 comandos por 2 minutos.
-        if (isKnown && !definition?.protected && isRateLimited(authorId)) {
+        // Rolagens de dados (/d, /2d6...) tambem: numa mesa se rola muito em sequencia,
+        // e elas nem entram no historico, entao nao consomem a cota dos outros comandos.
+        const isFloodExempt = definition?.protected || diceCommandInfo?.isDiceCommand;
+        if (isKnown && !isFloodExempt && isRateLimited(authorId)) {
             await msg.reply('⏳ Espere um pouco antes de usar mais comandos para não floodar.');
             return;
         }
@@ -375,6 +396,10 @@ class CommandHandler {
 
         if (command === '/letreco') {
             return this.handleLetreco(msg, chat, args);
+        }
+
+        if (command === '/pokemon' || command === '/pkm') {
+            return this.handlePokemon(msg, chat, args);
         }
 
         if (command === '/pais') {
@@ -1195,6 +1220,20 @@ class CommandHandler {
         }
     }
 
+    async handlePokemon(msg, chat, args) {
+        if (!this.pokemonGame) {
+            await msg.reply('❌ O "Quem é esse Pokémon?" ainda não está disponível.');
+            return;
+        }
+
+        try {
+            await this.pokemonGame.startGame(msg, chat, args);
+        } catch (err) {
+            console.error('Erro no /pokemon:', err?.message || err);
+            await msg.reply('❌ Não consegui iniciar o "Quem é esse Pokémon?" agora.');
+        }
+    }
+
     sanitizeDescription(text, maxLen = 280) {
         if (!text) return '';
         const clean = String(text)
@@ -1341,7 +1380,19 @@ class CommandHandler {
 
         try {
             const lastMonday = this.getLastMondayDate();
-            const weeklyBooks = await this.ensureWeeklyBooks(lastMonday);
+
+            // O ranking vem de scrape externo; se falhar, o resto (que vem do banco) ainda vai.
+            let weeklyBooks = [];
+            let rankingFailed = !BOOKS_RANKING_ENABLED;
+            if (BOOKS_RANKING_ENABLED) {
+                try {
+                    weeklyBooks = await this.ensureWeeklyBooks(lastMonday);
+                } catch (err) {
+                    rankingFailed = true;
+                    console.error('Erro ao buscar ranking do /books:', err?.message || err);
+                    this.errorLogger?.logError(err, { process: 'bot', context: 'command./livros' });
+                }
+            }
 
             const [downloads, recomendation] = await Promise.all([
                 prisma.booksDownload.findMany({
@@ -1367,7 +1418,9 @@ class CommandHandler {
             }
 
             lines.push('', '🏆 *Top livros da semana*');
-            if (weeklyBooks.length > 0) {
+            if (rankingFailed) {
+                lines.push('- Ranking indisponível no momento.');
+            } else if (weeklyBooks.length > 0) {
                 lines.push(...weeklyBooks.map((item, index) => `${index + 1}. ${this.normalizeText(item.book)}`));
             } else {
                 lines.push('- Nenhum livro encontrado para a semana.');
@@ -1546,6 +1599,14 @@ class CommandHandler {
         if (!this.dioService) {
             await msg.reply('❌ O barril do Diógenes está fechado por hoje.');
             return;
+        }
+
+        if (DIO_UNLIMITED_NUMBERS.size) {
+            const identities = await this.collectAuthorIdentities(msg);
+            if ([...identities].some((id) => DIO_UNLIMITED_NUMBERS.has(id))) {
+                await this.dioService.reply(msg, chat, question);
+                return;
+            }
         }
 
         const authorId = getSenderId(msg);
@@ -1802,7 +1863,7 @@ class CommandHandler {
     }
 
     // Le todos os tokens de `/rank`, em qualquer ordem: um filtro de jogo
-    // exclusivo (xadrez/letreco), um período (diario/semanal/mensal) e uma
+    // exclusivo (xadrez/letreco/pokemon), um período (diario/semanal/mensal) e uma
     // categoria (fala/uso/jogos). Token não reconhecido é ignorado.
     parseRankArgs(args) {
         const tokens = (args || []).map((a) => String(a || '').toLowerCase().trim()).filter(Boolean);
@@ -1814,6 +1875,7 @@ class CommandHandler {
         for (const token of tokens) {
             if (!gameMode && (token === 'xadrez' || token === 'chess')) gameMode = 'xadrez';
             else if (!gameMode && token === 'letreco') gameMode = 'letreco';
+            else if (!gameMode && (token === 'pokemon' || token === 'pokémon' || token === 'pkm')) gameMode = 'pokemon';
             else if (!period && (token === 'diario' || token === 'daily')) period = 'day';
             else if (!period && (token === 'semanal' || token === 'weekly')) period = 'week';
             else if (!period && (token === 'mensal' || token === 'monthly')) period = 'month';
@@ -2067,15 +2129,18 @@ class CommandHandler {
     async sendGameRank(msg, chat, gameType) {
         const titles = {
             xadrez: '♟️ *Xadrez — pontuação*',
-            letreco: '🟩 *Letreco — pontuação*'
+            letreco: '🟩 *Letreco — pontuação*',
+            pokemon: '❓ *Quem é esse Pokémon? — pontuação*'
         };
         const emptyMessages = {
             xadrez: '♟️ Ninguém pontuou no xadrez neste grupo ainda. Use */xadrez* para abrir uma partida.',
-            letreco: '🟩 Ninguém pontuou no letreco neste grupo ainda. Use */letreco* para começar uma partida.'
+            letreco: '🟩 Ninguém pontuou no letreco neste grupo ainda. Use */letreco* para começar uma partida.',
+            pokemon: '❓ Ninguém acertou nenhum Pokémon neste grupo ainda. Use */pokemon* para começar uma partida.'
         };
         const footers = {
             xadrez: '_Vitória vale 30 pontos, empate 15. Partidas com menos de 10 lances não contam._',
-            letreco: '_Quem acerta ganha 5 pontos + 3 por tentativa que sobrou; cada palpite válido vale 1 ponto (até 5). Partida jogada por uma pessoa só vale metade._'
+            letreco: '_Quem acerta ganha 5 pontos + 3 por tentativa que sobrou; cada palpite válido vale 1 ponto (até 5). Partida jogada por uma pessoa só vale metade._',
+            pokemon: '_Quem acerta ganha 10 pontos, menos 2 por dica revelada (uma dica a cada 3 chutes errados)._'
         };
 
         try {

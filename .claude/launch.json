@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gestao",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "localhost:8080", "-t", "tools/gestao/public", "tools/gestao/public/router.php"],
+      "port": 8080
+    }
+  ]
+}

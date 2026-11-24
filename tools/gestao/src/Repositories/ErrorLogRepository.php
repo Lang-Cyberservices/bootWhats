@@ -46,6 +46,19 @@ final class ErrorLogRepository
         return (int) $this->pdo->query('SELECT COUNT(*) FROM error_logs')->fetchColumn();
     }
 
+    public function create(string $process, string $context, string $message, ?string $stack = null): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO error_logs (process, context, message, stack) VALUES (:process, :context, :message, :stack)'
+        );
+        $stmt->execute([
+            'process' => $process,
+            'context' => mb_substr($context, 0, 191),
+            'message' => $message,
+            'stack' => $stack,
+        ]);
+    }
+
     public function markResolved(int $id): void
     {
         $stmt = $this->pdo->prepare('UPDATE error_logs SET resolved = 1, resolvedAt = NOW() WHERE id = :id');

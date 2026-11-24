@@ -9,6 +9,7 @@ $navItems = [
     'welcome' => ['route' => 'welcome', 'label' => 'Boas vindas'],
     'countries' => ['route' => 'countries', 'label' => 'Paises'],
     'proxies' => ['route' => 'proxies', 'label' => 'Proxies'],
+    'age-questions' => ['route' => 'age-questions', 'label' => 'Sua idade'],
     'system' => ['route' => 'system', 'label' => 'Sistema'],
 ];
 ?>
