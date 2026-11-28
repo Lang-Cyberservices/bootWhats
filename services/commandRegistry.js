@@ -33,6 +33,7 @@ const COMMAND_DEFINITIONS = [
     { name: 'letreco', aliases: ['/letreco'] },
     { name: 'pokemon', aliases: ['/pokemon', '/pkm'] },
     { name: 'pais', aliases: ['/pais'] },
+    { name: 'grupo', aliases: ['/grupo'] },
     { name: 'folhas', aliases: ['/folhas'] },
     { name: 'video', aliases: ['/video'] },
     { name: 'musica', aliases: ['/musica', '/música'] },

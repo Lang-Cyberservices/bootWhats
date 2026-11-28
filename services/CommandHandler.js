@@ -410,6 +410,10 @@ class CommandHandler {
             return this.handleFolhas(msg, chat, args);
         }
 
+        if (command === '/grupo') {
+            return this.handleGrupo(msg, chat);
+        }
+
         return await msg.reply('❌ Por que invocar um comando que nem o próprio bot reconhece? Use /ajuda e ilumine-se antes de tentar de novo.');
     }
 
@@ -1137,6 +1141,45 @@ class CommandHandler {
             console.error('Erro no /folhas:', err?.message || err);
             this.errorLogger?.logError(err, { process: 'bot', context: 'command./folhas' });
             await msg.reply(`❌ Não consegui falar com o Folhas: ${err?.message || 'erro desconhecido'}`);
+        }
+    }
+
+    // Foto do grupo com a descricao como legenda. A descricao mantem as quebras de
+    // linha (sanitizeDescription as achataria); sem foto, vai so o texto.
+    async handleGrupo(msg, chat) {
+        if (!chat?.isGroup) {
+            await msg.reply('❌ Este comando só funciona em grupos.');
+            return;
+        }
+
+        const name = String(chat.name || 'Grupo').trim();
+        const description = String(chat.description || '').replace(/\u0000/g, '').trim()
+            || '_Este grupo não tem descrição._';
+        const caption = `👥 *${name}*\n\n${description}`;
+
+        let media = null;
+        try {
+            const picUrl = await this.client?.getProfilePicUrl(chat.id._serialized);
+            if (picUrl) {
+                media = await withMediaTimeout(MessageMedia.fromUrl(picUrl, { unsafeMime: true }), 'grupo.download');
+            }
+        } catch (err) {
+            console.warn('Falha ao baixar a foto do grupo:', err?.message || err);
+            media = null;
+        }
+
+        try {
+            if (media) {
+                await withMediaTimeout(
+                    chat.sendMessage(media, { caption, quotedMessageId: msg.id?._serialized }),
+                    'grupo.send'
+                );
+            } else {
+                await msg.reply(caption);
+            }
+        } catch (err) {
+            console.error('Erro no /grupo:', err?.message || err);
+            await this.safeReply(msg, caption);
         }
     }
 
